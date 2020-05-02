@@ -1,9 +1,6 @@
-use std::ffi::CStr;
 use std::ops::Deref;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::c_int;
 use std::slice;
-use std::sync::Mutex;
-use std::sync::Once;
 
 use crate::{
     ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, NewValue, NonNull, Prop,
@@ -20,7 +17,7 @@ fn qruff_timer_class_id() -> ClassId {
 
 unsafe extern "C" fn qruff_clearTimeout(
     ctx: *mut ffi::JSContext,
-    this_val: ffi::JSValue,
+    _this_val: ffi::JSValue,
     argc: ::std::os::raw::c_int,
     argv: *mut ffi::JSValue,
 ) -> ffi::JSValue {
@@ -46,7 +43,7 @@ unsafe extern "C" fn qruff_setTimeout(
 ) -> ffi::JSValue {
     let ctxt = ContextRef::from_ptr(ctx);
     let this = Value::from(this_val);
-    let this = this.check_undefined();
+    let _this = this.check_undefined();
     let args = slice::from_raw_parts(argv, argc as usize);
     let arg0 = Value::from(args[0]);
     let arg1 = Value::from(args[1]);

@@ -12,22 +12,20 @@ extern crate lazy_static;
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use foreign_types_shared::ForeignTypeRef as OtherForeignTypeRef;
-use std::collections::HashMap;
-use std::ffi::{CStr, OsStr};
+
 use std::mem;
 use std::os::raw::c_void;
-use std::os::unix::ffi::OsStrExt;
+
 use std::ptr::null_mut;
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
-use tokio::fs::File;
-use tokio::prelude::*;
-use tokio::stream::{self, StreamExt};
-use tokio::sync::mpsc::{channel, Sender};
-use tokio::time::{delay_queue, DelayQueue};
+
+use tokio::stream::StreamExt;
+use tokio::sync::mpsc::channel;
+use tokio::time::DelayQueue;
 
 mod qruff_module;
 mod utils;
@@ -37,7 +35,7 @@ use utils::{
     RRId, RRIdGenerator, RRIdManager, RespType, RuffCtx,
 };
 
-use qruff_module::{js_init_module_qruff, register_timer_class};
+use qruff_module::js_init_module_qruff;
 
 use qjs::{
     ffi, Args, ClassId, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, NewValue,
@@ -193,7 +191,7 @@ cfg_if! {
 fn main() -> Result<(), Error> {
     pretty_env_logger::init();
 
-    let (mut msg_tx, mut msg_rx) = channel::<MsgType>(256);
+    let (msg_tx, _msg_rx) = channel::<MsgType>(256);
     let id_generator = RRIdGenerator::new();
     let mut resoure_manager = RRIdManager::new();
     let mut request_msg = Rc::new(Mutex::new(Vec::new()));
@@ -332,7 +330,7 @@ globalThis.os = os;
                 );
 
                 tokio::select! {
-                    mut resp = resp_rx.recv() => {
+                    resp = resp_rx.recv() => {
                         resoure_manager.handle_response(resp);
                     },
                     v = timer_queue.next(), if !resoure_manager.timer_is_empty() => {

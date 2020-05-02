@@ -1,6 +1,5 @@
 use crate::{
-    ffi, Args, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, NewValue, Runtime,
-    Unbindable, Value,
+    ffi, Args, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, Value,
 };
 use failure::Error;
 use foreign_types::ForeignTypeRef;
@@ -16,7 +15,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::fs::File;
 use tokio::prelude::*;
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::mpsc::Sender;
 use tokio::time::{delay_queue, DelayQueue};
 
 pub unsafe extern "C" fn jsc_module_loader(
@@ -204,7 +203,7 @@ impl<'a> RRIdManager<'a> {
     pub fn del_timer(&mut self, timer_queue: &mut DelayQueue<RJSTimerHandler<'a>>, id: u32) {
         if let Some(key) = self.pending_timer.remove(&id) {
             println!("delete timer id {}", id);
-            let item = timer_queue.remove(&key);
+            let _item = timer_queue.remove(&key);
         } else {
             println!("Invalid id {} for delete", id);
         }
@@ -288,7 +287,7 @@ pub fn check_msg_queue<'a>(
     resp_tx: &mut Sender<RespType>,
 ) {
     let mut request_msg = request_msg.lock().unwrap();
-    let mut v = request_msg.drain(..);
+    let v = request_msg.drain(..);
     for msg in v {
         match msg {
             MsgType::AddTimer(id, handle) => resoure_manager.add_timer(timer_queue, id, handle),

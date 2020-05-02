@@ -1,9 +1,6 @@
-use crate::{
-    ffi, Args, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, Value,
-};
+use crate::{ffi, Args, ContextRef, Eval, Local, Value};
 use failure::Error;
 use foreign_types::ForeignTypeRef;
-use foreign_types_shared::ForeignTypeRef as OtherForeignTypeRef;
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
 use std::os::raw::{c_char, c_void};
@@ -56,7 +53,8 @@ pub async fn fs_readall_async(path: String, mut tx: Sender<RespType>, job_id: u3
         Ok(file) => file,
         Err(err) => {
             println!("err is {}", err);
-            tx.try_send(RespType::FS_RESPONSE(job_id, Err(err.into())));
+            tx.try_send(RespType::FsResponse(job_id, Err(err.into())))
+                .unwrap();
             return;
         }
     };
@@ -64,7 +62,9 @@ pub async fn fs_readall_async(path: String, mut tx: Sender<RespType>, job_id: u3
     file.read_to_end(&mut contents).await.unwrap();
     //println!("Contents in rust: {:?}", std::str::from_utf8(&contents));
 
-    tx.send(RespType::FS_RESPONSE(job_id, Ok(contents))).await;
+    tx.send(RespType::FsResponse(job_id, Ok(contents)))
+        .await
+        .unwrap();
 }
 
 #[derive(Debug)]
@@ -124,12 +124,12 @@ impl<'a> RJSTimerHandler<'a> {
 pub enum MsgType<'a> {
     AddTimer(u32, RJSTimerHandler<'a>),
     DeleteTimer(u32),
-    FS_READALL(u32, String, RJSPromise<'a>),
+    FsReadAll(u32, String, RJSPromise<'a>),
 }
 
 #[derive(Debug)]
 pub enum RespType {
-    FS_RESPONSE(u32, Result<Vec<u8>, Error>),
+    FsResponse(u32, Result<Vec<u8>, Error>),
 }
 
 type RequestMsg<'a> = Rc<Mutex<Vec<MsgType<'a>>>>;
@@ -215,7 +215,7 @@ impl<'a> RRIdManager<'a> {
 
     pub fn handle_response(&mut self, mut resp: Option<RespType>) {
         match resp {
-            Some(RespType::FS_RESPONSE(job_id, ref mut content)) => {
+            Some(RespType::FsResponse(job_id, ref mut content)) => {
                 if let Some(promise) = self.pending_job.remove(&job_id) {
                     let mut resp = None;
                     let mut resp_err = String::new();
@@ -292,7 +292,7 @@ pub fn check_msg_queue<'a>(
         match msg {
             MsgType::AddTimer(id, handle) => resoure_manager.add_timer(timer_queue, id, handle),
             MsgType::DeleteTimer(id) => resoure_manager.del_timer(timer_queue, id),
-            MsgType::FS_READALL(id, path, promise) => {
+            MsgType::FsReadAll(id, path, promise) => {
                 tokio::spawn(fs_readall_async(path, resp_tx.clone(), id));
                 resoure_manager.add_promise(id, promise)
             }
@@ -318,7 +318,7 @@ pub fn fs_readall(ctxt: &ContextRef, _this: Option<&Value>, args: &[Value]) -> f
         );
 
         let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
-        request_msg.push(MsgType::FS_READALL(id, String::from(path), handle));
+        request_msg.push(MsgType::FsReadAll(id, String::from(path), handle));
         promise
     };
     ret

@@ -3,8 +3,8 @@ use std::os::raw::c_int;
 use std::slice;
 
 use crate::{
-    ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, NewValue, NonNull, Prop,
-    RJSTimerHandler, RuffCtx, Runtime, RuntimeRef, UnsafeCFunction, Value,
+    ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, RJSTimerHandler, RuffCtx, Runtime,
+    RuntimeRef, Value,
 };
 
 lazy_static! {
@@ -55,11 +55,9 @@ unsafe extern "C" fn qruff_setTimeout(
     timer.set_opaque(ptr);
     if ctxt.is_function(&arg0) {
         let delay_ms = ctxt.to_int64(&arg1).unwrap() as u64;
-        unsafe {
-            let handle = RJSTimerHandler::new(id, ctxt, delay_ms, &arg0);
-            let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
-            request_msg.push(MsgType::AddTimer(id, handle));
-        }
+        let handle = RJSTimerHandler::new(id, ctxt, delay_ms, &arg0);
+        let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
+        request_msg.push(MsgType::AddTimer(id, handle));
     } else {
         println!("Not Function");
         return ffi::UNDEFINED;

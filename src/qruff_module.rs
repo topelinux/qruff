@@ -11,6 +11,26 @@ lazy_static! {
     static ref QRUFF_TIMER_CLASS_ID: ClassId = Runtime::new_class_id();
 }
 
+macro_rules! register_func {
+    ($func_name:ident, $c_func:ident, $argc:expr) => {
+        ffi::JSCFunctionListEntry {
+            name: cstr!($func_name).as_ptr(),
+            prop_flags: (ffi::JS_PROP_WRITABLE | ffi::JS_PROP_CONFIGURABLE) as u8,
+            def_type: ffi::JS_DEF_CFUNC as u8,
+            magic: 0,
+            u: ffi::JSCFunctionListEntry__bindgen_ty_1 {
+                func: ffi::JSCFunctionListEntry__bindgen_ty_1__bindgen_ty_1 {
+                    length: $argc as u8,
+                    cproto: ffi::JSCFunctionEnum::JS_CFUNC_generic as u8,
+                    cfunc: ffi::JSCFunctionType {
+                        generic: Some($c_func),
+                    },
+                },
+            },
+        }
+    };
+}
+
 fn qruff_timer_class_id() -> ClassId {
     *QRUFF_TIMER_CLASS_ID
 }
@@ -98,36 +118,8 @@ lazy_static! {
             magic: 0,
             u: ffi::JSCFunctionListEntry__bindgen_ty_1 { i32: 16 },
         },
-        ffi::JSCFunctionListEntry {
-            name: cstr!(setTimeout).as_ptr(),
-            prop_flags: (ffi::JS_PROP_WRITABLE | ffi::JS_PROP_CONFIGURABLE) as u8,
-            def_type: ffi::JS_DEF_CFUNC as u8,
-            magic: 0,
-            u: ffi::JSCFunctionListEntry__bindgen_ty_1 {
-                func: ffi::JSCFunctionListEntry__bindgen_ty_1__bindgen_ty_1 {
-                    length: 2 as u8,
-                    cproto: ffi::JSCFunctionEnum::JS_CFUNC_generic as u8,
-                    cfunc: ffi::JSCFunctionType {
-                        generic: Some(qruff_setTimeout)
-                    }
-                }
-            },
-        },
-        ffi::JSCFunctionListEntry {
-            name: cstr!(clearTimeout).as_ptr(),
-            prop_flags: (ffi::JS_PROP_WRITABLE | ffi::JS_PROP_CONFIGURABLE) as u8,
-            def_type: ffi::JS_DEF_CFUNC as u8,
-            magic: 0,
-            u: ffi::JSCFunctionListEntry__bindgen_ty_1 {
-                func: ffi::JSCFunctionListEntry__bindgen_ty_1__bindgen_ty_1 {
-                    length: 1 as u8,
-                    cproto: ffi::JSCFunctionEnum::JS_CFUNC_generic as u8,
-                    cfunc: ffi::JSCFunctionType {
-                        generic: Some(qruff_clearTimeout)
-                    }
-                }
-            },
-        }
+        register_func!(setTimeout, qruff_setTimeout, 2),
+        register_func!(clearTimeout, qruff_clearTimeout, 1),
     ]);
 }
 

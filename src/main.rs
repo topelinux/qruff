@@ -3,7 +3,8 @@ extern crate log;
 #[macro_use]
 extern crate cfg_if;
 
-#[macro_use] extern crate cstr;
+#[macro_use]
+extern crate cstr;
 
 #[macro_use]
 extern crate lazy_static;
@@ -11,16 +12,16 @@ extern crate lazy_static;
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use foreign_types_shared::ForeignTypeRef as OtherForeignTypeRef;
+use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
 use std::mem;
 use std::os::raw::c_void;
 use std::os::unix::ffi::OsStrExt;
-use std::ptr::NonNull;
 use std::ptr::null_mut;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use tokio::fs::File;
 use tokio::prelude::*;
@@ -28,20 +29,19 @@ use tokio::stream::{self, StreamExt};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::time::{delay_queue, DelayQueue};
 
-
 mod qruff_module;
 mod utils;
 
 use utils::{
-    RJSTimerHandler, RuffCtx, RRId, RRIdManager, fs_readall,
-    jsc_module_loader, eval_buf, MsgType, RespType, RJSPromise,RRIdGenerator,check_msg_queue
+    check_msg_queue, eval_buf, fs_readall, jsc_module_loader, MsgType, RJSPromise, RJSTimerHandler,
+    RRId, RRIdGenerator, RRIdManager, RespType, RuffCtx,
 };
 
-use qruff_module::{register_timer_class,js_init_module_qruff};
+use qruff_module::{js_init_module_qruff, register_timer_class};
 
 use qjs::{
-    ffi, Args, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, Runtime,
-    Value, NewValue,Unbindable, ClassId, Prop, UnsafeCFunction, RuntimeRef,
+    ffi, Args, ClassId, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, NewValue,
+    Prop, Runtime, RuntimeRef, Unbindable, UnsafeCFunction, Value,
 };
 
 #[derive(Debug, StructOpt)]
@@ -190,7 +190,6 @@ cfg_if! {
     }
 }
 
-
 fn main() -> Result<(), Error> {
     pretty_env_logger::init();
 
@@ -261,7 +260,9 @@ globalThis.os = os;
             .build()
             .unwrap();
 
-        let fs_readall = ctxt.new_c_function(fs_readall, Some("fs_readall"), 1).unwrap();
+        let fs_readall = ctxt
+            .new_c_function(fs_readall, Some("fs_readall"), 1)
+            .unwrap();
         //let os_setTimeout = ctxt.new_c_function(setTimeout, Some("os_setTimeout"), 2).unwrap();
 
         //let value = ctxt.new_object();
@@ -273,7 +274,6 @@ globalThis.os = os;
         //ru.set_property("setTimeout", os_setTimeout).unwrap();
 
         ctxt.global_object().set_property("ru", ru).unwrap();
-
 
         let mut interactive = opt.interactive;
 
@@ -321,11 +321,15 @@ globalThis.os = os;
 
         let (mut resp_tx, mut resp_rx) = channel::<RespType>(2);
 
-
         event_rt.block_on(async {
             loop {
                 // check new time queue
-                check_msg_queue(&mut request_msg, &mut timer_queue, &mut resoure_manager, &mut resp_tx);
+                check_msg_queue(
+                    &mut request_msg,
+                    &mut timer_queue,
+                    &mut resoure_manager,
+                    &mut resp_tx,
+                );
 
                 tokio::select! {
                     mut resp = resp_rx.recv() => {
@@ -349,7 +353,12 @@ globalThis.os = os;
                     },
                 }
 
-                check_msg_queue(&mut request_msg, &mut timer_queue, &mut resoure_manager, &mut resp_tx);
+                check_msg_queue(
+                    &mut request_msg,
+                    &mut timer_queue,
+                    &mut resoure_manager,
+                    &mut resp_tx,
+                );
 
                 loop {
                     match rt.execute_pending_job() {
@@ -362,7 +371,12 @@ globalThis.os = os;
                     }
                 }
 
-                check_msg_queue(&mut request_msg, &mut timer_queue, &mut resoure_manager, &mut resp_tx);
+                check_msg_queue(
+                    &mut request_msg,
+                    &mut timer_queue,
+                    &mut resoure_manager,
+                    &mut resp_tx,
+                );
 
                 if resoure_manager.is_empty() {
                     break;

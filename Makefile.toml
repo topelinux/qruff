@@ -1,0 +1,5 @@
+[tasks.basic_js_test]
+script = [
+	"./target/debug/qruff tests/test_timer.js",
+	"./target/debug/qruff tests/test_fs.js"
+]

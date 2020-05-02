@@ -1,3 +1,7 @@
+use crate::{
+    ffi, Args, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, NewValue, Runtime,
+    Unbindable, Value,
+};
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use foreign_types_shared::ForeignTypeRef as OtherForeignTypeRef;
@@ -7,16 +11,13 @@ use std::os::raw::{c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr::null_mut;
-use std::time::Duration;
 use std::rc::Rc;
 use std::sync::Mutex;
+use std::time::Duration;
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::time::{delay_queue, DelayQueue};
-use crate::{
-    ffi, Args, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, Runtime, Value, NewValue, Unbindable
-};
 
 pub unsafe extern "C" fn jsc_module_loader(
     ctx: *mut ffi::JSContext,
@@ -77,7 +78,13 @@ pub struct RJSPromise<'a> {
 }
 
 impl<'a> RJSPromise<'a> {
-    pub unsafe fn new(id: u32, ctxt: &'a ContextRef, p: &Value, resolve: &Value, reject: &Value) -> Self {
+    pub unsafe fn new(
+        id: u32,
+        ctxt: &'a ContextRef,
+        p: &Value,
+        resolve: &Value,
+        reject: &Value,
+    ) -> Self {
         Self {
             id,
             ctxt,
@@ -103,7 +110,6 @@ pub struct RJSTimerHandler<'a> {
     pub delay_ms: u64,
 }
 
-
 impl<'a> RJSTimerHandler<'a> {
     pub unsafe fn new(id: u32, ctxt: &'a ContextRef, delay_ms: u64, callback: &Value) -> Self {
         Self {
@@ -117,7 +123,7 @@ impl<'a> RJSTimerHandler<'a> {
 
 #[derive(Debug)]
 pub enum MsgType<'a> {
-    AddTimer(u32,RJSTimerHandler<'a>),
+    AddTimer(u32, RJSTimerHandler<'a>),
     DeleteTimer(u32),
     FS_READALL(u32, String, RJSPromise<'a>),
 }
@@ -136,7 +142,11 @@ pub struct RuffCtx<'a> {
 }
 
 impl<'a> RuffCtx<'a> {
-    pub fn new(msg_tx: Sender<MsgType<'a>>, id_generator: RRIdGenerator, request_msg: RequestMsg<'a>) -> Self {
+    pub fn new(
+        msg_tx: Sender<MsgType<'a>>,
+        id_generator: RRIdGenerator,
+        request_msg: RequestMsg<'a>,
+    ) -> Self {
         RuffCtx {
             msg_tx,
             id_generator,
@@ -166,7 +176,7 @@ impl RRIdGenerator {
 
 pub struct RRIdManager<'a> {
     pending_job: HashMap<u32, RJSPromise<'a>>,
-    pending_timer: HashMap<u32, delay_queue::Key>
+    pending_timer: HashMap<u32, delay_queue::Key>,
 }
 
 unsafe impl<'a> Send for RRIdManager<'a> {}
@@ -176,11 +186,16 @@ impl<'a> RRIdManager<'a> {
     pub fn new() -> Self {
         Self {
             pending_job: HashMap::new(),
-            pending_timer: HashMap::new()
+            pending_timer: HashMap::new(),
         }
     }
 
-    pub fn add_timer(&mut self, timer_queue: &mut DelayQueue<RJSTimerHandler<'a>>, id: u32, timer: RJSTimerHandler<'a>) {
+    pub fn add_timer(
+        &mut self,
+        timer_queue: &mut DelayQueue<RJSTimerHandler<'a>>,
+        id: u32,
+        timer: RJSTimerHandler<'a>,
+    ) {
         let delay_ms: u64 = timer.delay_ms;
         let key = timer_queue.insert(timer, Duration::from_millis(delay_ms));
         self.pending_timer.insert(id, key);
@@ -220,7 +235,7 @@ impl<'a> RRIdManager<'a> {
 
                     unsafe {
                         if let Some(resp_to_js) = resp {
-                            let args =  resp_to_js.into_values(&promise.ctxt);
+                            let args = resp_to_js.into_values(&promise.ctxt);
                             //println!("array buffer ref count is {:?}", Value::from(args[0]).ref_cnt());
                             ffi::JS_Call(
                                 promise.ctxt.as_ptr(),
@@ -253,7 +268,7 @@ impl<'a> RRIdManager<'a> {
 
     pub fn handle_timer(&mut self, handle: RJSTimerHandler) {
         println!("rrid is {}", handle.id);
-        handle.callback.call(None, [0;0]);
+        handle.callback.call(None, [0; 0]);
         self.pending_timer.remove(&handle.id);
     }
 
@@ -266,14 +281,16 @@ impl<'a> RRIdManager<'a> {
     }
 }
 
-pub fn check_msg_queue<'a>(request_msg: &mut RequestMsg<'a>,
-                           timer_queue: &mut DelayQueue<RJSTimerHandler<'a>>,
-                           resoure_manager: &mut RRIdManager<'a>,
-                           resp_tx: &mut Sender<RespType>) {
+pub fn check_msg_queue<'a>(
+    request_msg: &mut RequestMsg<'a>,
+    timer_queue: &mut DelayQueue<RJSTimerHandler<'a>>,
+    resoure_manager: &mut RRIdManager<'a>,
+    resp_tx: &mut Sender<RespType>,
+) {
     let mut request_msg = request_msg.lock().unwrap();
     let mut v = request_msg.drain(..);
     for msg in v {
-        match msg{
+        match msg {
             MsgType::AddTimer(id, handle) => resoure_manager.add_timer(timer_queue, id, handle),
             MsgType::DeleteTimer(id) => resoure_manager.del_timer(timer_queue, id),
             MsgType::FS_READALL(id, path, promise) => {
@@ -292,8 +309,7 @@ pub fn fs_readall(ctxt: &ContextRef, _this: Option<&Value>, args: &[Value]) -> f
     let rfunc: [ffi::JSValue; 2] = [ffi::UNDEFINED; 2];
     let ret = unsafe {
         let id = ruff_ctx.as_mut().id_generator.next_id();
-        let promise =
-            ffi::JS_NewPromiseCapability(ctxt.as_ptr(), rfunc.as_ptr() as *mut _);
+        let promise = ffi::JS_NewPromiseCapability(ctxt.as_ptr(), rfunc.as_ptr() as *mut _);
         let handle = RJSPromise::new(
             id,
             ctxt,

@@ -1,11 +1,14 @@
 use std::ffi::CStr;
 use std::ops::Deref;
 use std::os::raw::{c_char, c_int};
+use std::slice;
 use std::sync::Mutex;
 use std::sync::Once;
-use std::slice;
 
-use crate::{ffi, mem, ClassId, ContextRef, ForeignTypeRef, Prop, Runtime, RuntimeRef, UnsafeCFunction, RJSTimerHandler, MsgType, Value, RuffCtx, NewValue, NonNull};
+use crate::{
+    ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, NewValue, NonNull, Prop,
+    RJSTimerHandler, RuffCtx, Runtime, RuntimeRef, UnsafeCFunction, Value,
+};
 
 lazy_static! {
     static ref QRUFF_TIMER_CLASS_ID: ClassId = Runtime::new_class_id();
@@ -56,18 +59,13 @@ unsafe extern "C" fn qruff_setTimeout(
     if ctxt.is_function(&arg0) {
         let delay_ms = ctxt.to_int64(&arg1).unwrap() as u64;
         unsafe {
-            let handle = RJSTimerHandler::new(
-                id,
-                ctxt,
-                delay_ms,
-                &arg0,
-            );
+            let handle = RJSTimerHandler::new(id, ctxt, delay_ms, &arg0);
             let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
             request_msg.push(MsgType::AddTimer(id, handle));
         }
     } else {
         println!("Not Function");
-        return ffi::UNDEFINED
+        return ffi::UNDEFINED;
     }
     *timer
 }
@@ -97,8 +95,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
 type FunctionListTable = [ffi::JSCFunctionListEntry; 3];
 
 lazy_static! {
-    static ref QRuffTimer: QRuffFunctionList = QRuffFunctionList(
-        [
+    static ref QRuffTimer: QRuffFunctionList = QRuffFunctionList([
         ffi::JSCFunctionListEntry {
             name: cstr!(CONST_16).as_ptr(),
             prop_flags: ffi::JS_PROP_CONFIGURABLE as u8,
@@ -136,8 +133,7 @@ lazy_static! {
                 }
             },
         }
-
-        ]);
+    ]);
 }
 
 struct QRuffFunctionList(FunctionListTable);
@@ -162,7 +158,12 @@ unsafe extern "C" fn js_module_dummy_init(
         println!("Fail to register Timer Class");
     }
 
-    ffi::JS_SetModuleExportList(_ctx, _m, QRuffTimer.as_ptr() as *mut _, QRuffTimer.0.len() as i32)
+    ffi::JS_SetModuleExportList(
+        _ctx,
+        _m,
+        QRuffTimer.as_ptr() as *mut _,
+        QRuffTimer.0.len() as i32,
+    )
 }
 
 pub fn js_init_module_qruff(ctxt: &ContextRef, module_name: &str) {
@@ -175,7 +176,7 @@ pub fn js_init_module_qruff(ctxt: &ContextRef, module_name: &str) {
             ctxt.as_ptr(),
             m.unwrap().as_ptr(),
             QRuffTimer.as_ptr() as *mut _,
-            QRuffTimer.0.len() as i32
+            QRuffTimer.0.len() as i32,
         );
     }
 }

@@ -14,7 +14,6 @@ use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{delay_queue, DelayQueue};
-use std::fmt::Write;
 use std::net::SocketAddr;
 
 use serde_json::value::Serializer;
@@ -216,12 +215,6 @@ impl<'a> RuffCtx<'a> {
     }
 }
 
-#[derive(Debug)]
-pub enum RRId {
-    Timer(u32),
-    Promise(u32),
-}
-
 pub struct RRIdGenerator(u32);
 
 impl RRIdGenerator {
@@ -328,8 +321,7 @@ impl<'a> RRIdManager<'a> {
     }
 
     pub fn handle_timer(&mut self, handle: RJSTimerHandler) {
-        println!("rrid is {}", handle.id);
-        handle.callback.call(None, [0; 0]);
+        handle.callback.call(None, [0; 0]).unwrap();
         self.pending_timer.remove(&handle.id);
     }
 

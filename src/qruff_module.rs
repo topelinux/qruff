@@ -104,8 +104,6 @@ unsafe extern "C" fn qruff_getAddrInfo(
     };
 
     let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
-    let id = ruff_ctx.as_mut().id_generator.next_id();
-
     let rfunc: [ffi::JSValue; 2] = [ffi::UNDEFINED; 2];
     let id = ruff_ctx.as_mut().id_generator.next_id();
     let promise = ffi::JS_NewPromiseCapability(ctxt.as_ptr(), rfunc.as_ptr() as *mut _);
@@ -148,7 +146,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
 type FunctionListTable = [ffi::JSCFunctionListEntry; 4];
 
 lazy_static! {
-    static ref QRuffTimer: QRuffFunctionList = QRuffFunctionList([
+    static ref QRUFF_MODULE_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
         ffi::JSCFunctionListEntry {
             name: cstr!(CONST_16).as_ptr(),
             prop_flags: ffi::JS_PROP_CONFIGURABLE as u8,
@@ -187,8 +185,8 @@ unsafe extern "C" fn js_module_dummy_init(
     ffi::JS_SetModuleExportList(
         _ctx,
         _m,
-        QRuffTimer.as_ptr() as *mut _,
-        QRuffTimer.0.len() as i32,
+        QRUFF_MODULE_FUNC_TABLE.as_ptr() as *mut _,
+        QRUFF_MODULE_FUNC_TABLE.0.len() as i32,
     )
 }
 
@@ -201,8 +199,8 @@ pub fn js_init_module_qruff(ctxt: &ContextRef, module_name: &str) {
         ffi::JS_AddModuleExportList(
             ctxt.as_ptr(),
             m.unwrap().as_ptr(),
-            QRuffTimer.as_ptr() as *mut _,
-            QRuffTimer.0.len() as i32,
+            QRUFF_MODULE_FUNC_TABLE.as_ptr() as *mut _,
+            QRUFF_MODULE_FUNC_TABLE.0.len() as i32,
         );
     }
 }

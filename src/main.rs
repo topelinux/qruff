@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -8,6 +9,7 @@ extern crate cstr;
 
 #[macro_use]
 extern crate lazy_static;
+
 
 use failure::Error;
 use foreign_types::ForeignTypeRef;
@@ -31,15 +33,14 @@ mod qruff_module;
 mod utils;
 
 use utils::{
-    check_msg_queue, eval_buf, fs_readall, jsc_module_loader, MsgType, RJSPromise, RJSTimerHandler,
-    RRId, RRIdGenerator, RRIdManager, RespType, RuffCtx,
+    check_msg_queue, eval_buf, fs_readall, jsc_module_loader, MsgType, RJSPromise, RJSTimerHandler, RRIdGenerator, RRIdManager, RespType, RuffCtx,
 };
 
 use qruff_module::js_init_module_qruff;
 
 use qjs::{
-    ffi, Args, ClassId, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions, NewValue,
-    Prop, Runtime, RuntimeRef, Unbindable, UnsafeCFunction, Value,
+    ffi, Args, ClassId, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions,
+    Runtime, RuntimeRef, Value,
 };
 
 #[derive(Debug, StructOpt)]

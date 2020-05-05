@@ -4,7 +4,7 @@ use std::slice;
 
 use crate::{
     ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, RJSTimerHandler, RuffCtx, Runtime,
-    RuntimeRef, Value,
+    RuntimeRef, Value, RJSPromise
 };
 
 lazy_static! {
@@ -85,6 +85,44 @@ unsafe extern "C" fn qruff_setTimeout(
     *timer
 }
 
+
+unsafe extern "C" fn qruff_getAddrInfo(
+    ctx: *mut ffi::JSContext,
+    this_val: ffi::JSValue,
+    argc: ::std::os::raw::c_int,
+    argv: *mut ffi::JSValue,
+) -> ffi::JSValue {
+    let ctxt = ContextRef::from_ptr(ctx);
+    let this = Value::from(this_val);
+    let _this = this.check_undefined();
+    let args = slice::from_raw_parts(argv, argc as usize);
+    let arg0 = Value::from(args[0]);
+
+    let addr = match ctxt.to_cstring(&arg0) {
+        Some(value) => String::from(value.to_string_lossy()),
+        None => return ffi::EXCEPTION,
+    };
+
+    let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
+    let id = ruff_ctx.as_mut().id_generator.next_id();
+
+    let rfunc: [ffi::JSValue; 2] = [ffi::UNDEFINED; 2];
+    let id = ruff_ctx.as_mut().id_generator.next_id();
+    let promise = ffi::JS_NewPromiseCapability(ctxt.as_ptr(), rfunc.as_ptr() as *mut _);
+    let handle = RJSPromise::new(
+        id,
+        ctxt,
+        &Value::from(promise),
+        &Value::from(rfunc[0]),
+        &Value::from(rfunc[1]),
+    );
+
+    let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
+    request_msg.push(MsgType::GetAddrInfo(id, addr, handle));
+    promise
+}
+
+
 pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     unsafe extern "C" fn qruff_timer_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
         let ptr = ffi::JS_GetOpaque(obj, qruff_timer_class_id());
@@ -107,7 +145,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     )
 }
 
-type FunctionListTable = [ffi::JSCFunctionListEntry; 3];
+type FunctionListTable = [ffi::JSCFunctionListEntry; 4];
 
 lazy_static! {
     static ref QRuffTimer: QRuffFunctionList = QRuffFunctionList([
@@ -120,6 +158,7 @@ lazy_static! {
         },
         register_func!(setTimeout, qruff_setTimeout, 2),
         register_func!(clearTimeout, qruff_clearTimeout, 1),
+        register_func!(getAddrInfo, qruff_getAddrInfo, 1),
     ]);
 }
 

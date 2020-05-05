@@ -1,4 +1,4 @@
-use crate::{ffi, Args, ContextRef, Eval, Local, Value};
+use crate::{ffi, Args, ContextRef, Eval, Local, Value };
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use std::collections::HashMap;
@@ -14,6 +14,13 @@ use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{delay_queue, DelayQueue};
+use std::fmt::Write;
+use std::net::SocketAddr;
+
+use serde_json::value::Serializer;
+use dns_lookup::{AddrInfo, getaddrinfo};
+use serde::{Serialize, Deserialize};
+use serde_json;
 
 pub unsafe extern "C" fn jsc_module_loader(
     ctx: *mut ffi::JSContext,
@@ -65,6 +72,59 @@ pub async fn fs_readall_async(path: String, mut tx: Sender<RespType>, job_id: u3
     tx.send(RespType::FsResponse(job_id, Ok(contents)))
         .await
         .unwrap();
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "AddrInfo")]
+struct AddrInfoDef {
+  /// Type of this socket.
+  ///
+  /// Values are defined by the libc on your system.
+  socktype: i32,
+  /// Protcol family for this socket.
+  ///
+  /// Values are defined by the libc on your system.
+  protocol: i32,
+  /// Address family for this socket (usually matches protocol family).
+  ///
+  /// Values are defined by the libc on your system.
+  address: i32,
+  /// Socket address for this socket, usually containing an actual
+  /// IP Address and port.
+  sockaddr: SocketAddr,
+  /// If requested, this is the canonical name for this socket/host.
+  canonname: Option<String>,
+  /// Optional bitmask arguments, usually set to zero.
+  flags: i32,
+}
+
+//#[derive(Serialize, Deserialize)]
+//struct ResponseAddrInfo {
+//    #[serde(with = "AddrInfoDef")]
+//    pub addrs: Vec<AddrInfo>,
+//}
+//
+//impl ResponseAddrInfo {
+//    pub fn new(addrs: Vec<AddrInfo>) -> ResponseAddrInfo {
+//        ResponseAddrInfo {
+//            addrs: addrs
+//        }
+//    }
+//}
+
+
+pub async fn get_addr_info(addr: String, mut tx: Sender<RespType>, job_id: u32) {
+    let sockets = getaddrinfo(Some(&addr), None, None).unwrap().collect::<std::io::Result<Vec<_>>>().unwrap();
+    let mut output = String::with_capacity(1024);
+    output.push('[');
+    for mut socket in sockets {
+        output.push_str(&format!("{}", AddrInfoDef::serialize(&mut socket, Serializer).unwrap()));
+        output.push(',');
+    }
+    output.pop();
+    output.push(']');
+    //println!("output: {}", output);
+    tx.send(RespType::GetAddrInfo(job_id, Ok(output.into_bytes()))).await.unwrap();
 }
 
 #[derive(Debug)]
@@ -125,11 +185,13 @@ pub enum MsgType<'a> {
     AddTimer(u32, RJSTimerHandler<'a>),
     DeleteTimer(u32),
     FsReadAll(u32, String, RJSPromise<'a>),
+    GetAddrInfo(u32, String, RJSPromise<'a>),
 }
 
 #[derive(Debug)]
 pub enum RespType {
     FsResponse(u32, Result<Vec<u8>, Error>),
+    GetAddrInfo(u32, Result<Vec<u8>, Error>),
 }
 
 type RequestMsg<'a> = Rc<Mutex<Vec<MsgType<'a>>>>;
@@ -215,14 +277,15 @@ impl<'a> RRIdManager<'a> {
 
     pub fn handle_response(&mut self, mut resp: Option<RespType>) {
         match resp {
-            Some(RespType::FsResponse(job_id, ref mut content)) => {
+            Some(RespType::FsResponse(job_id, ref mut content)) | Some(RespType::GetAddrInfo(job_id, ref mut content)) => {
+                println!("in handle_response job id is {}", job_id);
                 if let Some(promise) = self.pending_job.remove(&job_id) {
                     let mut resp = None;
                     let mut resp_err = String::new();
                     let handle = {
                         match content {
                             Ok(content) => {
-                                resp = Some(promise.ctxt.new_array_buffer(content));
+                                resp = Some(promise.ctxt.new_array_buffer_copy(content));
                                 &promise.resolve
                             }
                             Err(err) => {
@@ -235,7 +298,6 @@ impl<'a> RRIdManager<'a> {
                     unsafe {
                         if let Some(resp_to_js) = resp {
                             let args = resp_to_js.into_values(&promise.ctxt);
-                            //println!("array buffer ref count is {:?}", Value::from(args[0]).ref_cnt());
                             ffi::JS_Call(
                                 promise.ctxt.as_ptr(),
                                 handle.raw(),
@@ -256,7 +318,7 @@ impl<'a> RRIdManager<'a> {
                         }
                     }
                 }
-            }
+            },
             None => {}
         }
     }
@@ -295,7 +357,11 @@ pub fn check_msg_queue<'a>(
             MsgType::FsReadAll(id, path, promise) => {
                 tokio::spawn(fs_readall_async(path, resp_tx.clone(), id));
                 resoure_manager.add_promise(id, promise)
-            }
+            },
+            MsgType::GetAddrInfo(id, addr, promise) => {
+                tokio::spawn(get_addr_info(addr, resp_tx.clone(), id));
+                resoure_manager.add_promise(id, promise)
+            },
         }
     }
 }
@@ -323,3 +389,4 @@ pub fn fs_readall(ctxt: &ContextRef, _this: Option<&Value>, args: &[Value]) -> f
     };
     ret
 }
+

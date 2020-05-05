@@ -26,3 +26,6 @@ qjs = { version = "0.1", git = "https://github.com/topelinux/rust-quickjs.git", 
 structopt = "0.3"
 tempfile = "3.1"
 tokio = {version = "0.2.15", features = ["full"] }
+dns-lookup = "1.0.2"
+serde = {version = "1.0.106", features = ["derive"]}
+serde_json = "1.0.52"

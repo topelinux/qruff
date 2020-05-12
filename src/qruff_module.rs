@@ -2,6 +2,8 @@ use std::ops::Deref;
 use std::os::raw::c_int;
 use std::slice;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, RJSTimerHandler, RuffCtx, Runtime,
     RuntimeRef, Value, RJSPromise
@@ -34,6 +36,43 @@ macro_rules! register_func {
 fn qruff_timer_class_id() -> ClassId {
     *QRUFF_TIMER_CLASS_ID
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Cmd {
+    id: String,
+    reg_offset: u16,
+    reg_len: u16,
+    interval: u16,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CmdList(Vec<Cmd>);
+
+unsafe extern "C" fn qruff_create_cmd_generator(
+    ctx: *mut ffi::JSContext,
+    _this_val: ffi::JSValue,
+    argc: ::std::os::raw::c_int,
+    argv: *mut ffi::JSValue,
+) -> ffi::JSValue {
+    let ctxt = ContextRef::from_ptr(ctx);
+    let args = slice::from_raw_parts(argv, argc as usize);
+    let arg0 = Value::from(args[0]);
+
+    let cmd_json = match ctxt.to_cstring(&arg0) {
+        Some(value) => String::from(value.to_string_lossy()),
+        None => return ffi::EXCEPTION,
+    };
+
+    let cmds: CmdList = serde_json::from_str(&cmd_json).unwrap();
+
+    println!("cmd length is {}", cmds.0.len());
+    cmds.0.iter().for_each(|item| {
+        println!("{:?}", item);
+    });
+
+    ffi::UNDEFINED
+}
+
 
 unsafe extern "C" fn qruff_clearTimeout(
     ctx: *mut ffi::JSContext,
@@ -143,7 +182,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     )
 }
 
-type FunctionListTable = [ffi::JSCFunctionListEntry; 4];
+type FunctionListTable = [ffi::JSCFunctionListEntry; 5];
 
 lazy_static! {
     static ref QRUFF_MODULE_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
@@ -157,6 +196,7 @@ lazy_static! {
         register_func!(setTimeout, qruff_setTimeout, 2),
         register_func!(clearTimeout, qruff_clearTimeout, 1),
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),
+        register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
     ]);
 }
 

@@ -3,6 +3,7 @@ use std::os::raw::c_int;
 use std::slice;
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::{Sender, Receiver, channel};
 
 use crate::{
     ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, RJSTimerHandler, RuffCtx, Runtime,
@@ -11,6 +12,7 @@ use crate::{
 
 lazy_static! {
     static ref QRUFF_TIMER_CLASS_ID: ClassId = Runtime::new_class_id();
+    static ref QRUFF_CMD_GENERATOR_CLASS_ID: ClassId = Runtime::new_class_id();
 }
 
 macro_rules! register_func {
@@ -48,6 +50,23 @@ struct Cmd {
 #[derive(Serialize, Deserialize)]
 struct CmdList(Vec<Cmd>);
 
+struct CmdGenerator {
+    tx: Sender<Cmd>,
+    rx: Receiver<Cmd>,
+    cmds: CmdList,
+}
+
+impl CmdGenerator {
+    fn new(cmds: CmdList) -> Box<CmdGenerator> {
+        let (tx, rx) = channel(100);
+        Box::new(CmdGenerator {
+            tx,
+            rx,
+            cmds,
+        })
+    }
+}
+
 unsafe extern "C" fn qruff_create_cmd_generator(
     ctx: *mut ffi::JSContext,
     _this_val: ffi::JSValue,
@@ -70,7 +89,12 @@ unsafe extern "C" fn qruff_create_cmd_generator(
         println!("{:?}", item);
     });
 
-    ffi::UNDEFINED
+    let ptr = CmdGenerator::new(cmds);
+
+    let generator = ctxt.new_object_class(*QRUFF_CMD_GENERATOR_CLASS_ID);
+    generator.set_opaque(Box::into_raw(ptr));
+
+    *generator
 }
 
 
@@ -159,6 +183,27 @@ unsafe extern "C" fn qruff_getAddrInfo(
     promise
 }
 
+pub fn register_cmd_generator_class(rt: &RuntimeRef) -> bool {
+    unsafe extern "C" fn qruff_generator_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
+        let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_GENERATOR_CLASS_ID);
+
+        trace!("free userdata {:p} @ {:?}", ptr, obj.u.ptr);
+        println!("free userdata for cmd generator {:p} @ {:?}", ptr, obj.u.ptr);
+
+        mem::drop(Box::from_raw(ptr));
+    }
+
+    rt.new_class(
+        *QRUFF_CMD_GENERATOR_CLASS_ID,
+        &ffi::JSClassDef {
+            class_name: cstr!(QRuffCmdGenerator).as_ptr(),
+            finalizer: Some(qruff_generator_finalizer),
+            gc_mark: None,
+            call: None,
+            exotic: core::ptr::null_mut(),
+        },
+    )
+}
 
 pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     unsafe extern "C" fn qruff_timer_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
@@ -222,6 +267,9 @@ unsafe extern "C" fn js_module_dummy_init(
         println!("Fail to register Timer Class");
     }
 
+    if register_cmd_generator_class(ctxt.runtime()) {
+        println!("Fail to register Cmd CmdGenerator Class");
+    }
     ffi::JS_SetModuleExportList(
         _ctx,
         _m,

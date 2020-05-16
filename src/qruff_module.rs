@@ -50,15 +50,20 @@ pub struct Cmd {
 #[derive(Serialize, Deserialize,Clone, Debug)]
 pub struct CmdList(pub Vec<Cmd>);
 
+impl Drop for CmdList {
+    fn drop(&mut self) {
+        println!("> Dropping Cmdlist");
+    }
+}
 #[derive(Debug)]
 pub struct CmdGenerator {
     tx: Sender<Cmd>,
     rx: Option<Receiver<Cmd>>,
-    pub cmds: CmdList,
+    pub cmds: Option<CmdList>,
 }
 
 impl CmdGenerator {
-    fn new(cmds: CmdList, tx: Sender<Cmd>, rx:Option<Receiver<Cmd>>) -> Box<CmdGenerator> {
+    fn new(cmds: Option<CmdList>, tx: Sender<Cmd>, rx:Option<Receiver<Cmd>>) -> Box<CmdGenerator> {
         Box::new(CmdGenerator {
             tx,
             rx,
@@ -71,8 +76,8 @@ impl CmdGenerator {
 unsafe extern "C" fn qruff_cmd_generator_run(
     ctx: *mut ffi::JSContext,
     _this_val: ffi::JSValue,
-    argc: ::std::os::raw::c_int,
-    argv: *mut ffi::JSValue,
+    _argc: ::std::os::raw::c_int,
+    _argv: *mut ffi::JSValue,
 ) -> ffi::JSValue {
     let ctxt = ContextRef::from_ptr(ctx);
     let this = Value::from(_this_val);
@@ -82,9 +87,16 @@ unsafe extern "C" fn qruff_cmd_generator_run(
 
     let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
 
-    let cmd_generator = CmdGenerator::new((*ptr).cmds.clone(), (*ptr).tx.clone(), None);
-    let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
-    request_msg.push(MsgType::AddCmdGenerator(id, cmd_generator));
+    match &(*ptr).cmds {
+        Some(_cmds) => {
+            let cmd_generator = CmdGenerator::new((*ptr).cmds.take(), (*ptr).tx.clone(), None);
+            let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
+            request_msg.push(MsgType::AddCmdGenerator(id, cmd_generator));
+        },
+        None => {
+            println!("Already run");
+        }
+    }
 
     ffi::UNDEFINED
 }
@@ -105,7 +117,7 @@ unsafe extern "C" fn qruff_create_cmd_generator(
     };
     let cmds: CmdList = serde_json::from_str(&cmd_json).unwrap();
     let (tx, rx) = channel(100);
-    let cmd_generator = CmdGenerator::new(cmds, tx, Some(rx));
+    let cmd_generator = CmdGenerator::new(Some(cmds), tx, Some(rx));
     let ret = ctxt.new_object_class(*QRUFF_CMD_GENERATOR_CLASS_ID);
     ret.set_opaque(Box::into_raw(cmd_generator));
 
@@ -162,7 +174,6 @@ unsafe extern "C" fn qruff_setTimeout(
     *timer
 }
 
-
 unsafe extern "C" fn qruff_getAddrInfo(
     ctx: *mut ffi::JSContext,
     this_val: ffi::JSValue,
@@ -200,7 +211,7 @@ unsafe extern "C" fn qruff_getAddrInfo(
 
 pub fn register_cmd_generator_class(rt: &RuntimeRef) -> bool {
     unsafe extern "C" fn qruff_generator_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
-        let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_GENERATOR_CLASS_ID);
+        let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_GENERATOR_CLASS_ID) as *mut CmdGenerator;
 
         trace!("free userdata {:p} @ {:?}", ptr, obj.u.ptr);
         println!("free userdata for cmd generator {:p} @ {:?}", ptr, obj.u.ptr);

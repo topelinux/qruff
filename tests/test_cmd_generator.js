@@ -7,8 +7,8 @@ let a = setTimeout(() => {
 
 let cmd_generator = qruff.createCmdGenerator(JSON.stringify(
 [
-    {id: 'getTemperature', reg_offset: 0x3, reg_len:1, interval: 2},
-    {id: 'getHumit', reg_offset: 0x5, reg_len:1, interval: 3},
+    {id: 'getTemperature', reg_offset: 0x3, reg_len:1, interval: 1000},
+    {id: 'getHumit', reg_offset: 0x5, reg_len:1, interval: 2000},
 ]
 ));
 

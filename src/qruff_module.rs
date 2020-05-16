@@ -39,7 +39,7 @@ fn qruff_timer_class_id() -> ClassId {
     *QRUFF_TIMER_CLASS_ID
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug,Clone)]
 pub struct Cmd {
     pub id: String,
     pub reg_offset: u16,
@@ -47,17 +47,18 @@ pub struct Cmd {
     pub interval: u16,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize,Clone, Debug)]
 pub struct CmdList(pub Vec<Cmd>);
 
+#[derive(Debug)]
 pub struct CmdGenerator {
     tx: Sender<Cmd>,
     rx: Receiver<Cmd>,
-    pub cmds: CmdList,
+    pub cmds: Box<CmdList>,
 }
 
 impl CmdGenerator {
-    fn new(cmds: CmdList) -> Box<CmdGenerator> {
+    fn new(cmds: Box<CmdList>) -> Box<CmdGenerator> {
         let (tx, rx) = channel(100);
         Box::new(CmdGenerator {
             tx,
@@ -67,12 +68,6 @@ impl CmdGenerator {
     }
 }
 
-#[derive(Debug)]
-pub struct CmdGeneratorPtr(pub *mut CmdGenerator);
-unsafe impl Send for CmdGeneratorPtr {}
-unsafe impl Sync for CmdGeneratorPtr {}
-
-
 unsafe extern "C" fn qruff_cmd_generator_run(
     ctx: *mut ffi::JSContext,
     _this_val: ffi::JSValue,
@@ -80,17 +75,17 @@ unsafe extern "C" fn qruff_cmd_generator_run(
     argv: *mut ffi::JSValue,
 ) -> ffi::JSValue {
     let ctxt = ContextRef::from_ptr(ctx);
-    let args = slice::from_raw_parts(argv, argc as usize);
     let this = Value::from(_this_val);
 
     let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
     let id = ruff_ctx.as_mut().id_generator.next_id();
 
-    let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
+    let ptr = this.get_opaque::<CmdList>(*QRUFF_CMD_GENERATOR_CLASS_ID);
 
-    println!("ptr len is {}", (*ptr).cmds.0.len());
+    let cmds = Box::new((*ptr).clone());
+    let cmd_generator = CmdGenerator::new(cmds);
     let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
-    request_msg.push(MsgType::AddCmdGenerator(id, CmdGeneratorPtr(ptr)));
+    request_msg.push(MsgType::AddCmdGenerator(id, cmd_generator));
 
     ffi::UNDEFINED
 }
@@ -113,15 +108,8 @@ unsafe extern "C" fn qruff_create_cmd_generator(
 
     let cmds: CmdList = serde_json::from_str(&cmd_json).unwrap();
 
-    println!("cmd length is {}", cmds.0.len());
-    cmds.0.iter().for_each(|item| {
-        println!("{:?}", item);
-    });
-
-    let ptr = CmdGenerator::new(cmds);
-
     let generator = ctxt.new_object_class(*QRUFF_CMD_GENERATOR_CLASS_ID);
-    generator.set_opaque(Box::into_raw(ptr));
+    generator.set_opaque(Box::into_raw(Box::new(cmds)));
 
     *generator
 }

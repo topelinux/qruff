@@ -1,5 +1,4 @@
-use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGeneratorPtr };
-use async_timer::Interval;
+use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator};
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use std::collections::HashMap;
@@ -127,22 +126,22 @@ pub async fn get_addr_info(addr: String, mut tx: Sender<RespType>, job_id: u32) 
     tx.send(RespType::GetAddrInfo(job_id, Ok(output.into_bytes()))).await.unwrap();
 }
 
-pub async fn cmd_generator_loop(cmd_generator: CmdGeneratorPtr, id: u32) {
+pub async fn cmd_generator_loop(cmd_generator: Box<CmdGenerator>, id: u32) {
     let mut interval = time::interval(Duration::from_millis(1000));
-    unsafe {
-        let mut current_slot: u16 = 0;
-        loop {
-            println!("in cmd_generator_loop");
-            println!("cmd len in loop is {}", (*(cmd_generator.0)).cmds.0.len());
-            current_slot += 1;
-            (*(cmd_generator.0)).cmds.0.iter().for_each(|cmd| {
-                println!("cmd triggered{:?}", cmd);
-            });
+    let mut current_slot: u16 = 0;
+    loop {
+        println!("in cmd_generator_loop");
+        println!("cmd len in loop is {}", cmd_generator.cmds.0.len());
+        current_slot += 1000;
+        cmd_generator.cmds.0.iter().for_each(|cmd| {
+            if current_slot % cmd.interval == 0 {
+                println!("cmd triggered -> {:?}", cmd);
+            }
+        });
 
-            interval.tick().await;
-        }
-        println!("why come out");
+        interval.tick().await;
     }
+    println!("why come out");
 }
 #[derive(Debug)]
 pub struct RJSPromise<'a> {
@@ -203,7 +202,7 @@ pub enum MsgType<'a> {
     DeleteTimer(u32),
     FsReadAll(u32, String, RJSPromise<'a>),
     GetAddrInfo(u32, String, RJSPromise<'a>),
-    AddCmdGenerator(u32, CmdGeneratorPtr),
+    AddCmdGenerator(u32, Box<CmdGenerator>),
 }
 
 #[derive(Debug)]

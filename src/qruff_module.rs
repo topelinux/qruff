@@ -53,13 +53,12 @@ pub struct CmdList(pub Vec<Cmd>);
 #[derive(Debug)]
 pub struct CmdGenerator {
     tx: Sender<Cmd>,
-    rx: Receiver<Cmd>,
-    pub cmds: Box<CmdList>,
+    rx: Option<Receiver<Cmd>>,
+    pub cmds: CmdList,
 }
 
 impl CmdGenerator {
-    fn new(cmds: Box<CmdList>) -> Box<CmdGenerator> {
-        let (tx, rx) = channel(100);
+    fn new(cmds: CmdList, tx: Sender<Cmd>, rx:Option<Receiver<Cmd>>) -> Box<CmdGenerator> {
         Box::new(CmdGenerator {
             tx,
             rx,
@@ -67,6 +66,7 @@ impl CmdGenerator {
         })
     }
 }
+
 
 unsafe extern "C" fn qruff_cmd_generator_run(
     ctx: *mut ffi::JSContext,
@@ -80,16 +80,14 @@ unsafe extern "C" fn qruff_cmd_generator_run(
     let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
     let id = ruff_ctx.as_mut().id_generator.next_id();
 
-    let ptr = this.get_opaque::<CmdList>(*QRUFF_CMD_GENERATOR_CLASS_ID);
+    let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
 
-    let cmds = Box::new((*ptr).clone());
-    let cmd_generator = CmdGenerator::new(cmds);
+    let cmd_generator = CmdGenerator::new((*ptr).cmds.clone(), (*ptr).tx.clone(), None);
     let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
     request_msg.push(MsgType::AddCmdGenerator(id, cmd_generator));
 
     ffi::UNDEFINED
 }
-
 
 unsafe extern "C" fn qruff_create_cmd_generator(
     ctx: *mut ffi::JSContext,
@@ -105,15 +103,14 @@ unsafe extern "C" fn qruff_create_cmd_generator(
         Some(value) => String::from(value.to_string_lossy()),
         None => return ffi::EXCEPTION,
     };
-
     let cmds: CmdList = serde_json::from_str(&cmd_json).unwrap();
+    let (tx, rx) = channel(100);
+    let cmd_generator = CmdGenerator::new(cmds, tx, Some(rx));
+    let ret = ctxt.new_object_class(*QRUFF_CMD_GENERATOR_CLASS_ID);
+    ret.set_opaque(Box::into_raw(cmd_generator));
 
-    let generator = ctxt.new_object_class(*QRUFF_CMD_GENERATOR_CLASS_ID);
-    generator.set_opaque(Box::into_raw(Box::new(cmds)));
-
-    *generator
+    *ret
 }
-
 
 unsafe extern "C" fn qruff_clearTimeout(
     ctx: *mut ffi::JSContext,

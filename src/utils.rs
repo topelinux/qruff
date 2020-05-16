@@ -18,7 +18,6 @@ use tokio::time::{self, Duration};
 use serde_json::value::Serializer;
 use dns_lookup::{AddrInfo, getaddrinfo};
 use serde::{Serialize, Deserialize};
-use tokio::runtime::Runtime;
 use serde_json;
 
 pub unsafe extern "C" fn jsc_module_loader(

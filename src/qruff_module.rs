@@ -40,20 +40,20 @@ fn qruff_timer_class_id() -> ClassId {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Cmd {
-    id: String,
-    reg_offset: u16,
-    reg_len: u16,
-    interval: u16,
+pub struct Cmd {
+    pub id: String,
+    pub reg_offset: u16,
+    pub reg_len: u16,
+    pub interval: u16,
 }
 
 #[derive(Serialize, Deserialize)]
-struct CmdList(Vec<Cmd>);
+pub struct CmdList(pub Vec<Cmd>);
 
-struct CmdGenerator {
+pub struct CmdGenerator {
     tx: Sender<Cmd>,
     rx: Receiver<Cmd>,
-    cmds: CmdList,
+    pub cmds: CmdList,
 }
 
 impl CmdGenerator {
@@ -66,6 +66,35 @@ impl CmdGenerator {
         })
     }
 }
+
+#[derive(Debug)]
+pub struct CmdGeneratorPtr(pub *mut CmdGenerator);
+unsafe impl Send for CmdGeneratorPtr {}
+unsafe impl Sync for CmdGeneratorPtr {}
+
+
+unsafe extern "C" fn qruff_cmd_generator_run(
+    ctx: *mut ffi::JSContext,
+    _this_val: ffi::JSValue,
+    argc: ::std::os::raw::c_int,
+    argv: *mut ffi::JSValue,
+) -> ffi::JSValue {
+    let ctxt = ContextRef::from_ptr(ctx);
+    let args = slice::from_raw_parts(argv, argc as usize);
+    let this = Value::from(_this_val);
+
+    let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
+    let id = ruff_ctx.as_mut().id_generator.next_id();
+
+    let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
+
+    println!("ptr len is {}", (*ptr).cmds.0.len());
+    let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
+    request_msg.push(MsgType::AddCmdGenerator(id, CmdGeneratorPtr(ptr)));
+
+    ffi::UNDEFINED
+}
+
 
 unsafe extern "C" fn qruff_create_cmd_generator(
     ctx: *mut ffi::JSContext,
@@ -183,6 +212,7 @@ unsafe extern "C" fn qruff_getAddrInfo(
     promise
 }
 
+
 pub fn register_cmd_generator_class(rt: &RuntimeRef) -> bool {
     unsafe extern "C" fn qruff_generator_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
         let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_GENERATOR_CLASS_ID);
@@ -243,6 +273,21 @@ lazy_static! {
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),
         register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
     ]);
+
+    static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
+        ffi::JSCFunctionListEntry {
+            name: cstr!(CONST_16).as_ptr(),
+            prop_flags: ffi::JS_PROP_CONFIGURABLE as u8,
+            def_type: ffi::JS_DEF_PROP_INT32 as u8,
+            magic: 0,
+            u: ffi::JSCFunctionListEntry__bindgen_ty_1 { i32: 16 },
+        },
+        register_func!(run, qruff_cmd_generator_run, 0),
+        register_func!(output, qruff_clearTimeout, 1),
+        register_func!(getAddrInfo, qruff_getAddrInfo, 1),
+        register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
+    ]);
+
 }
 
 struct QRuffFunctionList(FunctionListTable);
@@ -270,6 +315,15 @@ unsafe extern "C" fn js_module_dummy_init(
     if register_cmd_generator_class(ctxt.runtime()) {
         println!("Fail to register Cmd CmdGenerator Class");
     }
+
+    let obj = ctxt.new_object();
+    ffi::JS_SetPropertyFunctionList(_ctx, obj.raw(),
+        QRUFF_CMD_GENERATOR_FUNC_TABLE.as_ptr() as *mut _,
+        QRUFF_CMD_GENERATOR_FUNC_TABLE.0.len() as i32,
+    );
+
+    ctxt.set_class_proto(*QRUFF_CMD_GENERATOR_CLASS_ID, obj);
+
     ffi::JS_SetModuleExportList(
         _ctx,
         _m,

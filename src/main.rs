@@ -32,11 +32,11 @@ use tokio::time::DelayQueue;
 mod qruff_module;
 mod utils;
 
+use qruff_module::{js_init_module_qruff, CmdGeneratorPtr};
 use utils::{
     check_msg_queue, eval_buf, fs_readall, jsc_module_loader, MsgType, RJSPromise, RJSTimerHandler, RRIdGenerator, RRIdManager, RespType, RuffCtx,
 };
 
-use qruff_module::js_init_module_qruff;
 
 use qjs::{
     ffi, Args, ClassId, Context, ContextRef, ErrorKind, Eval, Local, MallocFunctions,

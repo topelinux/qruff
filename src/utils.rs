@@ -1,4 +1,5 @@
-use crate::{ffi, Args, ContextRef, Eval, Local, Value };
+use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGeneratorPtr };
+use async_timer::Interval;
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use std::collections::HashMap;
@@ -9,16 +10,16 @@ use std::path::Path;
 use std::ptr::null_mut;
 use std::rc::Rc;
 use std::sync::Mutex;
-use std::time::Duration;
 use tokio::fs::File;
 use tokio::prelude::*;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{delay_queue, DelayQueue};
 use std::net::SocketAddr;
-
+use tokio::time::{self, Duration};
 use serde_json::value::Serializer;
 use dns_lookup::{AddrInfo, getaddrinfo};
 use serde::{Serialize, Deserialize};
+use tokio::runtime::Runtime;
 use serde_json;
 
 pub unsafe extern "C" fn jsc_module_loader(
@@ -126,6 +127,23 @@ pub async fn get_addr_info(addr: String, mut tx: Sender<RespType>, job_id: u32) 
     tx.send(RespType::GetAddrInfo(job_id, Ok(output.into_bytes()))).await.unwrap();
 }
 
+pub async fn cmd_generator_loop(cmd_generator: CmdGeneratorPtr, id: u32) {
+    let mut interval = time::interval(Duration::from_millis(1000));
+    unsafe {
+        let mut current_slot: u16 = 0;
+        loop {
+            println!("in cmd_generator_loop");
+            println!("cmd len in loop is {}", (*(cmd_generator.0)).cmds.0.len());
+            current_slot += 1;
+            (*(cmd_generator.0)).cmds.0.iter().for_each(|cmd| {
+                println!("cmd triggered{:?}", cmd);
+            });
+
+            interval.tick().await;
+        }
+        println!("why come out");
+    }
+}
 #[derive(Debug)]
 pub struct RJSPromise<'a> {
     id: u32,
@@ -185,6 +203,7 @@ pub enum MsgType<'a> {
     DeleteTimer(u32),
     FsReadAll(u32, String, RJSPromise<'a>),
     GetAddrInfo(u32, String, RJSPromise<'a>),
+    AddCmdGenerator(u32, CmdGeneratorPtr),
 }
 
 #[derive(Debug)]
@@ -354,6 +373,9 @@ pub fn check_msg_queue<'a>(
                 tokio::spawn(get_addr_info(addr, resp_tx.clone(), id));
                 resoure_manager.add_promise(id, promise)
             },
+            MsgType::AddCmdGenerator(id, cmd_generator) => {
+                tokio::spawn(cmd_generator_loop(cmd_generator, id));
+            }
         }
     }
 }

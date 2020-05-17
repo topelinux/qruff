@@ -17,9 +17,9 @@ lazy_static! {
 }
 
 macro_rules! register_func {
-    ($func_name:ident, $c_func:ident, $argc:expr) => {
+    ($type_name:ident, $c_func:ident, $argc:expr) => {
         ffi::JSCFunctionListEntry {
-            name: cstr!($func_name).as_ptr(),
+            name: cstr!($type_name).as_ptr(),
             prop_flags: (ffi::JS_PROP_WRITABLE | ffi::JS_PROP_CONFIGURABLE) as u8,
             def_type: ffi::JS_DEF_CFUNC as u8,
             magic: 0,
@@ -45,6 +45,24 @@ macro_rules! register_i32_const {
             magic: 0,
             u: ffi::JSCFunctionListEntry__bindgen_ty_1 { i32: $value},
         }
+    };
+}
+
+macro_rules! new_func_table_type {
+    ($type_name:ident, $type_name_inner:ident, $func_num:expr) => {
+        type $type_name_inner = [ffi::JSCFunctionListEntry; $func_num];
+        struct $type_name($type_name_inner);
+
+        impl Deref for $type_name {
+            type Target = $type_name_inner;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        unsafe impl Send for $type_name {}
+        unsafe impl Sync for $type_name {}
     };
 }
 
@@ -286,10 +304,12 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     )
 }
 
-type FunctionListTable = [ffi::JSCFunctionListEntry; 5];
+new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 5);
+new_func_table_type!(QRuffCmdGeneratorFuncList, CmdGeneratorFuncList, 1);
+new_func_table_type!(QRuffPipeFuncList, PipeFuncList, 1);
 
 lazy_static! {
-    static ref QRUFF_MODULE_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
+    static ref QRUFF_MODULE_FUNC_TABLE: QRuffModuleFuncList = QRuffModuleFuncList([
         register_i32_const!(CONST_16, 16),
         register_func!(setTimeout, qruff_setTimeout, 2),
         register_func!(clearTimeout, qruff_clearTimeout, 1),
@@ -297,27 +317,15 @@ lazy_static! {
         register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
     ]);
 
-    static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
-        register_i32_const!(CONST_16, 16),
+    static ref QRUFF_PIPE_FUNC_TABLE: QRuffPipeFuncList = QRuffPipeFuncList([
+        register_func!(createPipe, qruff_cmd_generator_run, 0),
+    ]);
+
+    static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffCmdGeneratorFuncList = QRuffCmdGeneratorFuncList([
         register_func!(run, qruff_cmd_generator_run, 0),
-        register_func!(output, qruff_clearTimeout, 1),
-        register_func!(getAddrInfo, qruff_getAddrInfo, 1),
-        register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
     ]);
 
 }
-
-struct QRuffFunctionList(FunctionListTable);
-impl Deref for QRuffFunctionList {
-    type Target = FunctionListTable;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-unsafe impl Send for QRuffFunctionList {}
-unsafe impl Sync for QRuffFunctionList {}
 
 unsafe extern "C" fn js_module_dummy_init(
     _ctx: *mut ffi::JSContext,

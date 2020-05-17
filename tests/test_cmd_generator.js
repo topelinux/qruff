@@ -11,7 +11,14 @@ let cmd_generator = qruff.createCmdGenerator(JSON.stringify(
     {id: 'getHumit', reg_offset: 0x5, reg_len:1, interval: 2000},
 ]
 ));
-//let consumer;
-//cmd_generator.pipe(consumer);
+
+console.log(cmd_generator.CONST_16);
+//let my_pipe = pipe();
+//cmd_generator.pipe(my_pipe);
+//
+//let consume = create_consume();
+//
+//my_pipe.pipe(consume);
+//
 console.log(cmd_generator.run());
 //console.log(cmd_generator.run());

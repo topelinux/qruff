@@ -12,6 +12,7 @@ use crate::{
 
 lazy_static! {
     static ref QRUFF_TIMER_CLASS_ID: ClassId = Runtime::new_class_id();
+    static ref QRUFF_PIPE_CLASS_ID: ClassId = Runtime::new_class_id();
     static ref QRUFF_CMD_GENERATOR_CLASS_ID: ClassId = Runtime::new_class_id();
 }
 
@@ -31,6 +32,18 @@ macro_rules! register_func {
                     },
                 },
             },
+        }
+    };
+}
+
+macro_rules! register_i32_const {
+    ($const_name:ident, $value:expr) => {
+        ffi::JSCFunctionListEntry {
+            name: cstr!($const_name).as_ptr(),
+            prop_flags: ffi::JS_PROP_CONFIGURABLE as u8,
+            def_type: ffi::JS_DEF_PROP_INT32 as u8,
+            magic: 0,
+            u: ffi::JSCFunctionListEntry__bindgen_ty_1 { i32: $value},
         }
     };
 }
@@ -72,6 +85,26 @@ impl CmdGenerator {
     }
 }
 
+unsafe extern "C" fn qruff_cmd_generator_pipe(
+    ctx: *mut ffi::JSContext,
+    _this_val: ffi::JSValue,
+    _argc: ::std::os::raw::c_int,
+    _argv: *mut ffi::JSValue,
+) -> ffi::JSValue {
+    let ctxt = ContextRef::from_ptr(ctx);
+    let this = Value::from(_this_val);
+
+    let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
+    let id = ruff_ctx.as_mut().id_generator.next_id();
+
+    let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
+
+    match &(*ptr).rx {
+        Some(rx) => { },
+        None => println!("Already run")
+    }
+    ffi::UNDEFINED
+}
 
 unsafe extern "C" fn qruff_cmd_generator_run(
     ctx: *mut ffi::JSContext,
@@ -257,13 +290,7 @@ type FunctionListTable = [ffi::JSCFunctionListEntry; 5];
 
 lazy_static! {
     static ref QRUFF_MODULE_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
-        ffi::JSCFunctionListEntry {
-            name: cstr!(CONST_16).as_ptr(),
-            prop_flags: ffi::JS_PROP_CONFIGURABLE as u8,
-            def_type: ffi::JS_DEF_PROP_INT32 as u8,
-            magic: 0,
-            u: ffi::JSCFunctionListEntry__bindgen_ty_1 { i32: 16 },
-        },
+        register_i32_const!(CONST_16, 16),
         register_func!(setTimeout, qruff_setTimeout, 2),
         register_func!(clearTimeout, qruff_clearTimeout, 1),
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),
@@ -271,13 +298,7 @@ lazy_static! {
     ]);
 
     static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffFunctionList = QRuffFunctionList([
-        ffi::JSCFunctionListEntry {
-            name: cstr!(CONST_16).as_ptr(),
-            prop_flags: ffi::JS_PROP_CONFIGURABLE as u8,
-            def_type: ffi::JS_DEF_PROP_INT32 as u8,
-            magic: 0,
-            u: ffi::JSCFunctionListEntry__bindgen_ty_1 { i32: 16 },
-        },
+        register_i32_const!(CONST_16, 16),
         register_func!(run, qruff_cmd_generator_run, 0),
         register_func!(output, qruff_clearTimeout, 1),
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),

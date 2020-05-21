@@ -1,4 +1,4 @@
-use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator};
+use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator, Cmd};
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use std::collections::HashMap;
@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 use tokio::fs::File;
 use tokio::prelude::*;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Sender, Receiver};
 use tokio::time::{delay_queue, DelayQueue};
 use std::net::SocketAddr;
 use tokio::time::{self, Duration};
@@ -125,18 +125,19 @@ pub async fn get_addr_info(addr: String, mut tx: Sender<RespType>, job_id: u32) 
     tx.send(RespType::GetAddrInfo(job_id, Ok(output.into_bytes()))).await.unwrap();
 }
 
-pub async fn cmd_generator_loop(cmd_generator: Box<CmdGenerator>, _id: u32) {
+pub async fn cmd_generator_loop(mut cmd_generator: Box<CmdGenerator>, _id: u32) {
     let mut interval = time::interval(Duration::from_millis(1000));
     let mut current_slot: u16 = 0;
     if let Some(cmds) = cmd_generator.cmds {
         loop {
             println!("in cmd_generator_loop");
             current_slot += 1000;
-            cmds.0.iter().for_each(|cmd| {
+            for cmd in &cmds.0 {
                 if current_slot % cmd.interval == 0 {
-                    println!("cmd triggered -> {:?}", cmd);
+                    cmd_generator.tx.send(cmd.clone()).await.unwrap();
+                    //println!("cmd triggered -> {:?}", cmd);
                 }
-            });
+            }
             interval.tick().await;
         }
     }
@@ -201,6 +202,7 @@ pub enum MsgType<'a> {
     FsReadAll(u32, String, RJSPromise<'a>),
     GetAddrInfo(u32, String, RJSPromise<'a>),
     AddCmdGenerator(u32, Box<CmdGenerator>),
+    AddCmdShower(u32, Receiver<Cmd>),
 }
 
 #[derive(Debug)]
@@ -372,7 +374,14 @@ pub fn check_msg_queue<'a>(
             },
             MsgType::AddCmdGenerator(id, cmd_generator) => {
                 tokio::spawn(cmd_generator_loop(cmd_generator, id));
-            }
+            },
+            MsgType::AddCmdShower(id, mut rx) => {
+                tokio::spawn(async move {
+                    while let Some(cmd) = rx.recv().await {
+                        println!("Got {:?}", cmd);
+                    }
+                });
+            },
         }
     }
 }

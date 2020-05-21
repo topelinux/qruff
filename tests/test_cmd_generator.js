@@ -1,9 +1,9 @@
 import * as qruff from "qruff";
 
 let setTimeout = qruff.setTimeout;
-let a = setTimeout(() => {
-    console.log('Cool Qruff timer 1000ms be triggerd');
-}, 5000);
+//let a = setTimeout(() => {
+//    console.log('Cool Qruff timer 1000ms be triggerd');
+//}, 5000);
 
 let cmd_generator = qruff.createCmdGenerator(JSON.stringify(
 [
@@ -13,12 +13,13 @@ let cmd_generator = qruff.createCmdGenerator(JSON.stringify(
 ));
 
 console.log(cmd_generator.CONST_16);
-//let my_pipe = pipe();
-//cmd_generator.pipe(my_pipe);
+let my_pipe = qruff.createCmdPipe();
+cmd_generator.pipe(my_pipe);
 //
 //let consume = create_consume();
 //
 //my_pipe.pipe(consume);
 //
 console.log(cmd_generator.run());
+my_pipe.show();
 //console.log(cmd_generator.run());

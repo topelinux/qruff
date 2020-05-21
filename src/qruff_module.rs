@@ -12,7 +12,7 @@ use crate::{
 
 lazy_static! {
     static ref QRUFF_TIMER_CLASS_ID: ClassId = Runtime::new_class_id();
-    static ref QRUFF_PIPE_CLASS_ID: ClassId = Runtime::new_class_id();
+    static ref QRUFF_CMD_PIPE_CLASS_ID: ClassId = Runtime::new_class_id();
     static ref QRUFF_CMD_GENERATOR_CLASS_ID: ClassId = Runtime::new_class_id();
 }
 
@@ -88,39 +88,76 @@ impl Drop for CmdList {
 }
 #[derive(Debug)]
 pub struct CmdGenerator {
-    tx: Sender<Cmd>,
+    pub tx: Sender<Cmd>,
     rx: Option<Receiver<Cmd>>,
     pub cmds: Option<CmdList>,
 }
 
 impl CmdGenerator {
-    fn new(cmds: Option<CmdList>, tx: Sender<Cmd>, rx:Option<Receiver<Cmd>>) -> Box<CmdGenerator> {
-        Box::new(CmdGenerator {
+    fn new(cmds: Option<CmdList>, tx: Sender<Cmd>, rx:Option<Receiver<Cmd>>) -> CmdGenerator {
+        CmdGenerator {
             tx,
             rx,
             cmds,
-        })
+        }
     }
 }
 
-unsafe extern "C" fn qruff_cmd_generator_pipe(
+#[derive(Debug)]
+pub struct CmdPipe {
+   pub rx: Option<Receiver<Cmd>>
+}
+
+impl CmdPipe {
+    fn new() -> CmdPipe {
+        CmdPipe {
+            rx: None,
+        }
+    }
+}
+
+unsafe extern "C" fn qruff_create_cmd_pipe(
     ctx: *mut ffi::JSContext,
     _this_val: ffi::JSValue,
     _argc: ::std::os::raw::c_int,
     _argv: *mut ffi::JSValue,
 ) -> ffi::JSValue {
     let ctxt = ContextRef::from_ptr(ctx);
-    let this = Value::from(_this_val);
+    let ret = ctxt.new_object_class(*QRUFF_CMD_PIPE_CLASS_ID);
+    let pipe = CmdPipe::new();
+    println!("pipe is {:p}", &pipe);
+    let pipe_ptr = Box::into_raw(Box::new(pipe));
+    println!("pipe_ptr is {:p}", pipe_ptr);
+    ret.set_opaque(pipe_ptr);
 
-    let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
-    let id = ruff_ctx.as_mut().id_generator.next_id();
+    *ret
+}
+
+unsafe extern "C" fn qruff_cmd_generator_pipe(
+    ctx: *mut ffi::JSContext,
+    this_val: ffi::JSValue,
+    argc: ::std::os::raw::c_int,
+    argv: *mut ffi::JSValue,
+) -> ffi::JSValue {
+    let ctxt = ContextRef::from_ptr(ctx);
+    let this = Value::from(this_val);
+    let args = slice::from_raw_parts(argv, argc as usize);
+    let dest = Value::from(args[0]);
 
     let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
 
     match &(*ptr).rx {
-        Some(rx) => { },
-        None => println!("Already run")
+        Some(rx) => {
+            let mut dest_ptr = dest.get_opaque::<CmdPipe>(*QRUFF_CMD_PIPE_CLASS_ID);
+            let rx = (*ptr).rx.take().unwrap();
+            (*dest_ptr).rx.replace(rx);
+            println!("!!!! set pipe tx !!!!!");
+        },
+        None => {
+            println!("Already run");
+        }
     }
+
     ffi::UNDEFINED
 }
 
@@ -140,7 +177,7 @@ unsafe extern "C" fn qruff_cmd_generator_run(
 
     match &(*ptr).cmds {
         Some(_cmds) => {
-            let cmd_generator = CmdGenerator::new((*ptr).cmds.take(), (*ptr).tx.clone(), None);
+            let cmd_generator = Box::new(CmdGenerator::new((*ptr).cmds.take(), (*ptr).tx.clone(), None));
             let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
             request_msg.push(MsgType::AddCmdGenerator(id, cmd_generator));
         },
@@ -151,6 +188,35 @@ unsafe extern "C" fn qruff_cmd_generator_run(
 
     ffi::UNDEFINED
 }
+
+unsafe extern "C" fn qruff_cmd_show(
+    ctx: *mut ffi::JSContext,
+    _this_val: ffi::JSValue,
+    _argc: ::std::os::raw::c_int,
+    _argv: *mut ffi::JSValue,
+) -> ffi::JSValue {
+    let ctxt = ContextRef::from_ptr(ctx);
+    let this = Value::from(_this_val);
+
+    let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
+    let id = ruff_ctx.as_mut().id_generator.next_id();
+
+    let ptr = this.get_opaque::<CmdPipe>(*QRUFF_CMD_PIPE_CLASS_ID);
+
+    match &(*ptr).rx{
+        Some(_rx) => {
+            let mut request_msg = ruff_ctx.as_mut().request_msg.lock().unwrap();
+            let rx = (*ptr).rx.take().unwrap();
+            request_msg.push(MsgType::AddCmdShower(id, rx));
+        },
+        None => {
+            println!("Already run");
+        }
+    }
+
+    ffi::UNDEFINED
+}
+
 
 unsafe extern "C" fn qruff_create_cmd_generator(
     ctx: *mut ffi::JSContext,
@@ -168,7 +234,7 @@ unsafe extern "C" fn qruff_create_cmd_generator(
     };
     let cmds: CmdList = serde_json::from_str(&cmd_json).unwrap();
     let (tx, rx) = channel(100);
-    let cmd_generator = CmdGenerator::new(Some(cmds), tx, Some(rx));
+    let cmd_generator = Box::new(CmdGenerator::new(Some(cmds), tx, Some(rx)));
     let ret = ctxt.new_object_class(*QRUFF_CMD_GENERATOR_CLASS_ID);
     ret.set_opaque(Box::into_raw(cmd_generator));
 
@@ -259,6 +325,27 @@ unsafe extern "C" fn qruff_getAddrInfo(
     promise
 }
 
+pub fn register_creat_cmd_pipe_class(rt: &RuntimeRef) -> bool {
+    unsafe extern "C" fn qruff_cmd_pipe_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
+        let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_PIPE_CLASS_ID);
+
+        trace!("free userdata {:p} @ {:?}", ptr, obj.u.ptr);
+        println!("free userdata for cmd generator {:p} @ {:?}", ptr, obj.u.ptr);
+
+        mem::drop(Box::from_raw(ptr));
+    }
+
+    rt.new_class(
+        *QRUFF_CMD_PIPE_CLASS_ID,
+        &ffi::JSClassDef {
+            class_name: cstr!(QRuffCmdPipe).as_ptr(),
+            finalizer: Some(qruff_cmd_pipe_finalizer),
+            gc_mark: None,
+            call: None,
+            exotic: core::ptr::null_mut(),
+        },
+    )
+}
 
 pub fn register_cmd_generator_class(rt: &RuntimeRef) -> bool {
     unsafe extern "C" fn qruff_generator_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
@@ -304,9 +391,9 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     )
 }
 
-new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 5);
-new_func_table_type!(QRuffCmdGeneratorFuncList, CmdGeneratorFuncList, 1);
-new_func_table_type!(QRuffPipeFuncList, PipeFuncList, 1);
+new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 6);
+new_func_table_type!(QRuffCmdGeneratorFuncList, CmdGeneratorFuncList, 2);
+new_func_table_type!(QRuffCmdPipeFuncList, CmdPipeFuncList, 1);
 
 lazy_static! {
     static ref QRUFF_MODULE_FUNC_TABLE: QRuffModuleFuncList = QRuffModuleFuncList([
@@ -315,14 +402,17 @@ lazy_static! {
         register_func!(clearTimeout, qruff_clearTimeout, 1),
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),
         register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
+        register_func!(createCmdPipe, qruff_create_cmd_pipe, 1),
     ]);
 
-    static ref QRUFF_PIPE_FUNC_TABLE: QRuffPipeFuncList = QRuffPipeFuncList([
-        register_func!(createPipe, qruff_cmd_generator_run, 0),
+    static ref QRUFF_CMD_PIPE_FUNC_TABLE: QRuffCmdPipeFuncList = QRuffCmdPipeFuncList([
+        //register_func!(show, qruff_cmd_generator_run, 0),
+        register_func!(show, qruff_cmd_show, 0),
     ]);
 
     static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffCmdGeneratorFuncList = QRuffCmdGeneratorFuncList([
         register_func!(run, qruff_cmd_generator_run, 0),
+        register_func!(pipe, qruff_cmd_generator_pipe, 1),
     ]);
 
 }
@@ -341,13 +431,22 @@ unsafe extern "C" fn js_module_dummy_init(
         println!("Fail to register Cmd CmdGenerator Class");
     }
 
-    let obj = ctxt.new_object();
-    ffi::JS_SetPropertyFunctionList(_ctx, obj.raw(),
+    let cmd_obj = ctxt.new_object();
+    ffi::JS_SetPropertyFunctionList(_ctx, cmd_obj.raw(),
         QRUFF_CMD_GENERATOR_FUNC_TABLE.as_ptr() as *mut _,
         QRUFF_CMD_GENERATOR_FUNC_TABLE.0.len() as i32,
     );
 
-    ctxt.set_class_proto(*QRUFF_CMD_GENERATOR_CLASS_ID, obj);
+    ctxt.set_class_proto(*QRUFF_CMD_GENERATOR_CLASS_ID, cmd_obj);
+
+    let cmd_pipe_obj = ctxt.new_object();
+    ffi::JS_SetPropertyFunctionList(_ctx, cmd_pipe_obj.raw(),
+        QRUFF_CMD_PIPE_FUNC_TABLE.as_ptr() as *mut _,
+        QRUFF_CMD_PIPE_FUNC_TABLE.0.len() as i32,
+    );
+
+    ctxt.set_class_proto(*QRUFF_CMD_PIPE_CLASS_ID, cmd_pipe_obj);
+
 
     ffi::JS_SetModuleExportList(
         _ctx,

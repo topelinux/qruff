@@ -1,4 +1,4 @@
-use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator, Cmd};
+use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator, Cmd, qruff_rtu_setup_settle_promise, SerialConfig, rtu_setup, RtuContext};
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use std::collections::HashMap;
@@ -145,10 +145,10 @@ pub async fn cmd_generator_loop(mut cmd_generator: Box<CmdGenerator>, _id: u32) 
 #[derive(Debug)]
 pub struct RJSPromise<'a> {
     id: u32,
-    ctxt: &'a ContextRef,
-    p: Local<'a, Value>,
-    resolve: Local<'a, Value>,
-    reject: Local<'a, Value>,
+    pub ctxt: &'a ContextRef,
+    pub p: Local<'a, Value>,
+    pub resolve: Local<'a, Value>,
+    pub reject: Local<'a, Value>,
 }
 
 impl<'a> RJSPromise<'a> {
@@ -203,12 +203,14 @@ pub enum MsgType<'a> {
     GetAddrInfo(u32, String, RJSPromise<'a>),
     AddCmdGenerator(u32, Box<CmdGenerator>),
     AddCmdShower(u32, Receiver<Cmd>),
+    CreateRtuSetup(u32, SerialConfig, RJSPromise<'a>),
 }
 
 #[derive(Debug)]
 pub enum RespType {
     FsResponse(u32, Result<Vec<u8>, Error>),
     GetAddrInfo(u32, Result<Vec<u8>, Error>),
+    RtuSetup(u32, Result<RtuContext, Error>),
 }
 
 type RequestMsg<'a> = Rc<Mutex<Vec<MsgType<'a>>>>;
@@ -330,6 +332,11 @@ impl<'a> RRIdManager<'a> {
                     }
                 }
             },
+            Some(RespType::RtuSetup(job_id, context)) => {
+                if let Some(promise) = self.pending_job.remove(&job_id) {
+                    qruff_rtu_setup_settle_promise(promise, context);
+                }
+            },
             None => {}
         }
     }
@@ -374,6 +381,10 @@ pub fn check_msg_queue<'a>(
             },
             MsgType::AddCmdGenerator(id, cmd_generator) => {
                 tokio::spawn(cmd_generator_loop(cmd_generator, id));
+            },
+            MsgType::CreateRtuSetup(id, config, promise) => {
+                tokio::spawn(rtu_setup(config, resp_tx.clone(), id));
+                resoure_manager.add_promise(id, promise)
             },
             MsgType::AddCmdShower(id, mut rx) => {
                 tokio::spawn(async move {

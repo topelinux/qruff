@@ -29,9 +29,11 @@ use tokio::stream::StreamExt;
 use tokio::sync::mpsc::channel;
 use tokio::time::DelayQueue;
 
+mod qruff_modbus;
 mod qruff_module;
 mod utils;
 
+use qruff_modbus::{qruff_rtu_setup_settle_promise, SerialConfig, qruff_rtu_setup, register_rtu_context_class, rtu_setup, RtuContext};
 use qruff_module::{js_init_module_qruff, CmdGenerator, Cmd};
 use utils::{
     check_msg_queue, eval_buf, fs_readall, jsc_module_loader, MsgType, RJSPromise, RJSTimerHandler, RRIdGenerator, RRIdManager, RespType, RuffCtx,

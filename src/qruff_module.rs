@@ -7,7 +7,7 @@ use tokio::sync::mpsc::{Sender, Receiver, channel};
 
 use crate::{
     ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, RJSTimerHandler, RuffCtx, Runtime,
-    RuntimeRef, Value, RJSPromise
+    RuntimeRef, Value, RJSPromise, register_rtu_context_class, qruff_rtu_setup,
 };
 
 lazy_static! {
@@ -391,7 +391,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
     )
 }
 
-new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 6);
+new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 7);
 new_func_table_type!(QRuffCmdGeneratorFuncList, CmdGeneratorFuncList, 2);
 new_func_table_type!(QRuffCmdPipeFuncList, CmdPipeFuncList, 1);
 
@@ -403,6 +403,7 @@ lazy_static! {
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),
         register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
         register_func!(createCmdPipe, qruff_create_cmd_pipe, 1),
+        register_func!(rtu_setup, qruff_rtu_setup, 1),
     ]);
 
     static ref QRUFF_CMD_PIPE_FUNC_TABLE: QRuffCmdPipeFuncList = QRuffCmdPipeFuncList([
@@ -431,6 +432,9 @@ unsafe extern "C" fn js_module_dummy_init(
         println!("Fail to register Cmd CmdGenerator Class");
     }
 
+    if register_rtu_context_class(ctxt.runtime()) {
+        println!("Fail to register rtu context Class");
+    }
     let cmd_obj = ctxt.new_object();
     ffi::JS_SetPropertyFunctionList(_ctx, cmd_obj.raw(),
         QRUFF_CMD_GENERATOR_FUNC_TABLE.as_ptr() as *mut _,
@@ -446,7 +450,6 @@ unsafe extern "C" fn js_module_dummy_init(
     );
 
     ctxt.set_class_proto(*QRUFF_CMD_PIPE_CLASS_ID, cmd_pipe_obj);
-
 
     ffi::JS_SetModuleExportList(
         _ctx,

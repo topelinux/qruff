@@ -96,21 +96,6 @@ struct AddrInfoDef {
   flags: i32,
 }
 
-//#[derive(Serialize, Deserialize)]
-//struct ResponseAddrInfo {
-//    #[serde(with = "AddrInfoDef")]
-//    pub addrs: Vec<AddrInfo>,
-//}
-//
-//impl ResponseAddrInfo {
-//    pub fn new(addrs: Vec<AddrInfo>) -> ResponseAddrInfo {
-//        ResponseAddrInfo {
-//            addrs: addrs
-//        }
-//    }
-//}
-
-
 pub async fn get_addr_info(addr: String, mut tx: Sender<RespType>, job_id: u32) {
     let sockets = getaddrinfo(Some(&addr), None, None).unwrap().collect::<std::io::Result<Vec<_>>>().unwrap();
     let mut output = String::with_capacity(1024);
@@ -293,43 +278,7 @@ impl<'a> RRIdManager<'a> {
             Some(RespType::FsResponse(job_id, ref mut content)) | Some(RespType::GetAddrInfo(job_id, ref mut content)) => {
                 println!("in handle_response job id is {}", job_id);
                 if let Some(promise) = self.pending_job.remove(&job_id) {
-                    let mut resp = None;
-                    let mut resp_err = String::new();
-                    let handle = {
-                        match content {
-                            Ok(content) => {
-                                resp = Some(promise.ctxt.new_array_buffer_copy(content));
-                                &promise.resolve
-                            }
-                            Err(err) => {
-                                resp_err.push_str(&format!("QJS Error {:?}", err));
-                                &promise.reject
-                            }
-                        }
-                    };
-
-                    unsafe {
-                        if let Some(resp_to_js) = resp {
-                            let args = resp_to_js.into_values(&promise.ctxt);
-                            ffi::JS_Call(
-                                promise.ctxt.as_ptr(),
-                                handle.raw(),
-                                ffi::NULL,
-                                1 as i32,
-                                args.as_ptr() as *mut _,
-                            );
-                            // do free for Value
-                            promise.ctxt.free_value(args[0]);
-                        } else {
-                            ffi::JS_Call(
-                                promise.ctxt.as_ptr(),
-                                handle.raw(),
-                                ffi::NULL,
-                                1 as i32,
-                                resp_err.into_values(&promise.ctxt).as_ptr() as *mut _,
-                            );
-                        }
-                    }
+                   settle_promise_for_array_buffer(promise, content);
                 }
             },
             Some(RespType::RtuSetup(job_id, context)) => {
@@ -421,3 +370,31 @@ pub fn fs_readall(ctxt: &ContextRef, _this: Option<&Value>, args: &[Value]) -> f
     ret
 }
 
+pub fn settle_promise_for_array_buffer<'a>(promise: RJSPromise<'a>, content: &mut Result<Vec<u8>, Error>) {
+    let (handle, args) = {
+        match content {
+            Ok(content) => {
+                (&promise.resolve, promise.ctxt.new_array_buffer_copy(content).into_values(&promise.ctxt))
+            }
+            Err(err) => {
+                let mut resp_err = String::new();
+                resp_err.push_str(&format!("QJS Error {:?}", err));
+                (&promise.reject, resp_err.into_values(&promise.ctxt))
+            }
+        }
+    };
+
+    unsafe {
+        ffi::JS_Call(
+            promise.ctxt.as_ptr(),
+            handle.raw(),
+            ffi::NULL,
+            1 as i32,
+            args.as_ptr() as *mut _,
+        );
+    }
+    // do free for Value
+    for arg in &args {
+        promise.ctxt.free_value(*arg);
+    }
+}

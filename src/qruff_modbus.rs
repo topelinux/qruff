@@ -28,39 +28,32 @@ impl fmt::Debug for RtuContext {
     }
 }
 pub fn qruff_rtu_setup_settle_promise<'a>(promise: RJSPromise<'a>, context: Result<RtuContext, Error>) {
-    match context {
+    let (handle, args) = match context {
         Ok(context) => {
             let rtu_setup = promise.ctxt.new_object_class(*QRUFF_RTU_CONTEXT_CLASS_ID);
             rtu_setup.set_opaque(Box::into_raw(Box::new(context)));
             let args = rtu_setup.into_values(&promise.ctxt);
-            unsafe {
-                ffi::JS_Call(
-                    promise.ctxt.as_ptr(),
-                    (&promise.resolve).raw(),
-                    ffi::NULL,
-                    1 as i32,
-                    args.as_ptr() as *mut _,
-                );
-            }
-            promise.ctxt.free_value(args[0]);
+            (&promise.resolve, args)
         },
         Err(err) => {
             let mut resp_err = String::new();
-
             resp_err.push_str(&format!("QJS Error {:?}", err));
-            unsafe {
-                ffi::JS_Call(
-                    promise.ctxt.as_ptr(),
-                    (&promise.reject).raw(),
-                    ffi::NULL,
-                    1 as i32,
-                    resp_err.into_values(&promise.ctxt).as_ptr() as *mut _,
-                );
-            }
+            let args = resp_err.into_values(&promise.ctxt);
+            (&promise.reject, args)
         }
+    };
+    unsafe {
+        ffi::JS_Call(
+            promise.ctxt.as_ptr(),
+            handle.raw(),
+            ffi::NULL,
+            1 as i32,
+            args.as_ptr() as *mut _,
+        );
     }
-
-
+    for arg in &args {
+        promise.ctxt.free_value(*arg);
+    }
 }
 
 pub unsafe extern "C" fn qruff_rtu_setup(

@@ -12,7 +12,7 @@ use crate::{
 
 lazy_static! {
     static ref QRUFF_TIMER_CLASS_ID: ClassId = Runtime::new_class_id();
-    static ref QRUFF_CMD_PIPE_CLASS_ID: ClassId = Runtime::new_class_id();
+    static ref QRUFF_CMD_ENDPOINT_CLASS_ID: ClassId = Runtime::new_class_id();
     static ref QRUFF_CMD_GENERATOR_CLASS_ID: ClassId = Runtime::new_class_id();
 }
 
@@ -104,36 +104,36 @@ impl CmdGenerator {
 }
 
 #[derive(Debug)]
-pub struct CmdPipe {
+pub struct CmdEndpoint {
    pub rx: Option<Receiver<Cmd>>
 }
 
-impl CmdPipe {
-    fn new() -> CmdPipe {
-        CmdPipe {
+impl CmdEndpoint {
+    fn new() -> CmdEndpoint {
+        CmdEndpoint {
             rx: None,
         }
     }
 }
 
-unsafe extern "C" fn qruff_create_cmd_pipe(
+unsafe extern "C" fn qruff_create_cmd_endpoint(
     ctx: *mut ffi::JSContext,
     _this_val: ffi::JSValue,
     _argc: ::std::os::raw::c_int,
     _argv: *mut ffi::JSValue,
 ) -> ffi::JSValue {
     let ctxt = ContextRef::from_ptr(ctx);
-    let ret = ctxt.new_object_class(*QRUFF_CMD_PIPE_CLASS_ID);
-    let pipe = CmdPipe::new();
-    println!("pipe is {:p}", &pipe);
-    let pipe_ptr = Box::into_raw(Box::new(pipe));
-    println!("pipe_ptr is {:p}", pipe_ptr);
-    ret.set_opaque(pipe_ptr);
+    let ret = ctxt.new_object_class(*QRUFF_CMD_ENDPOINT_CLASS_ID);
+    let endpoint = CmdEndpoint::new();
+    println!("endpoint is {:p}", &endpoint);
+    let endpoint_ptr = Box::into_raw(Box::new(endpoint));
+    println!("endpoint_ptr is {:p}", endpoint_ptr);
+    ret.set_opaque(endpoint_ptr);
 
     *ret
 }
 
-unsafe extern "C" fn qruff_cmd_generator_pipe(
+unsafe extern "C" fn qruff_cmd_generator_endpoint(
     ctx: *mut ffi::JSContext,
     this_val: ffi::JSValue,
     argc: ::std::os::raw::c_int,
@@ -148,10 +148,10 @@ unsafe extern "C" fn qruff_cmd_generator_pipe(
 
     match &(*ptr).rx {
         Some(rx) => {
-            let mut dest_ptr = dest.get_opaque::<CmdPipe>(*QRUFF_CMD_PIPE_CLASS_ID);
+            let mut dest_ptr = dest.get_opaque::<CmdEndpoint>(*QRUFF_CMD_ENDPOINT_CLASS_ID);
             let rx = (*ptr).rx.take().unwrap();
             (*dest_ptr).rx.replace(rx);
-            println!("!!!! set pipe tx !!!!!");
+            println!("!!!! set endpoint tx !!!!!");
         },
         None => {
             println!("Already run");
@@ -201,7 +201,7 @@ unsafe extern "C" fn qruff_cmd_show(
     let mut ruff_ctx = ctxt.userdata::<RuffCtx>().unwrap();
     let id = ruff_ctx.as_mut().id_generator.next_id();
 
-    let ptr = this.get_opaque::<CmdPipe>(*QRUFF_CMD_PIPE_CLASS_ID);
+    let ptr = this.get_opaque::<CmdEndpoint>(*QRUFF_CMD_ENDPOINT_CLASS_ID);
 
     match &(*ptr).rx{
         Some(_rx) => {
@@ -325,9 +325,9 @@ unsafe extern "C" fn qruff_getAddrInfo(
     promise
 }
 
-pub fn register_creat_cmd_pipe_class(rt: &RuntimeRef) -> bool {
-    unsafe extern "C" fn qruff_cmd_pipe_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
-        let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_PIPE_CLASS_ID);
+pub fn register_creat_cmd_endpoint_class(rt: &RuntimeRef) -> bool {
+    unsafe extern "C" fn qruff_cmd_endpoint_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
+        let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_ENDPOINT_CLASS_ID);
 
         trace!("free userdata {:p} @ {:?}", ptr, obj.u.ptr);
         println!("free userdata for cmd generator {:p} @ {:?}", ptr, obj.u.ptr);
@@ -336,10 +336,10 @@ pub fn register_creat_cmd_pipe_class(rt: &RuntimeRef) -> bool {
     }
 
     rt.new_class(
-        *QRUFF_CMD_PIPE_CLASS_ID,
+        *QRUFF_CMD_ENDPOINT_CLASS_ID,
         &ffi::JSClassDef {
-            class_name: cstr!(QRuffCmdPipe).as_ptr(),
-            finalizer: Some(qruff_cmd_pipe_finalizer),
+            class_name: cstr!(QRuffCmdEndpoint).as_ptr(),
+            finalizer: Some(qruff_cmd_endpoint_finalizer),
             gc_mark: None,
             call: None,
             exotic: core::ptr::null_mut(),
@@ -393,7 +393,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
 
 new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 7);
 new_func_table_type!(QRuffCmdGeneratorFuncList, CmdGeneratorFuncList, 2);
-new_func_table_type!(QRuffCmdPipeFuncList, CmdPipeFuncList, 1);
+new_func_table_type!(QRuffCmdEndpointFuncList, CmdEndpointFuncList, 1);
 
 lazy_static! {
     static ref QRUFF_MODULE_FUNC_TABLE: QRuffModuleFuncList = QRuffModuleFuncList([
@@ -402,18 +402,18 @@ lazy_static! {
         register_func!(clearTimeout, qruff_clearTimeout, 1),
         register_func!(getAddrInfo, qruff_getAddrInfo, 1),
         register_func!(createCmdGenerator, qruff_create_cmd_generator, 1),
-        register_func!(createCmdPipe, qruff_create_cmd_pipe, 1),
+        register_func!(createCmdEndpoint, qruff_create_cmd_endpoint, 1),
         register_func!(rtu_setup, qruff_rtu_setup, 1),
     ]);
 
-    static ref QRUFF_CMD_PIPE_FUNC_TABLE: QRuffCmdPipeFuncList = QRuffCmdPipeFuncList([
+    static ref QRUFF_CMD_ENDPOINT_FUNC_TABLE: QRuffCmdEndpointFuncList = QRuffCmdEndpointFuncList([
         //register_func!(show, qruff_cmd_generator_run, 0),
         register_func!(show, qruff_cmd_show, 0),
     ]);
 
     static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffCmdGeneratorFuncList = QRuffCmdGeneratorFuncList([
         register_func!(run, qruff_cmd_generator_run, 0),
-        register_func!(pipe, qruff_cmd_generator_pipe, 1),
+        register_func!(endpoint, qruff_cmd_generator_endpoint, 1),
     ]);
 
 }
@@ -443,13 +443,13 @@ unsafe extern "C" fn js_module_dummy_init(
 
     ctxt.set_class_proto(*QRUFF_CMD_GENERATOR_CLASS_ID, cmd_obj);
 
-    let cmd_pipe_obj = ctxt.new_object();
-    ffi::JS_SetPropertyFunctionList(_ctx, cmd_pipe_obj.raw(),
-        QRUFF_CMD_PIPE_FUNC_TABLE.as_ptr() as *mut _,
-        QRUFF_CMD_PIPE_FUNC_TABLE.0.len() as i32,
+    let cmd_endpoint_obj = ctxt.new_object();
+    ffi::JS_SetPropertyFunctionList(_ctx, cmd_endpoint_obj.raw(),
+        QRUFF_CMD_ENDPOINT_FUNC_TABLE.as_ptr() as *mut _,
+        QRUFF_CMD_ENDPOINT_FUNC_TABLE.0.len() as i32,
     );
 
-    ctxt.set_class_proto(*QRUFF_CMD_PIPE_CLASS_ID, cmd_pipe_obj);
+    ctxt.set_class_proto(*QRUFF_CMD_ENDPOINT_CLASS_ID, cmd_endpoint_obj);
 
     ffi::JS_SetModuleExportList(
         _ctx,

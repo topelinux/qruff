@@ -13,13 +13,16 @@ let cmd_generator = qruff.createCmdGenerator(JSON.stringify(
 ));
 
 console.log(cmd_generator.CONST_16);
-let my_pipe = qruff.createCmdPipe();
-cmd_generator.pipe(my_pipe);
+let my_endpoint = qruff.createCmdEndpoint();
+// clone my_endpoint input(channel.tx) to cmd_generator
+cmd_generator.endpoint(my_endpoint);
+
+// move cmd_generator.rx to my_endpoint
 //
 //let consume = create_consume();
 //
-//my_pipe.pipe(consume);
+//my_endpoint.endpoint(consume);
 //
 console.log(cmd_generator.run());
-my_pipe.show();
+my_endpoint.show();
 //console.log(cmd_generator.run());

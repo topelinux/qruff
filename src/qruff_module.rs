@@ -8,6 +8,7 @@ use tokio::sync::mpsc::{Sender, Receiver, channel};
 use crate::{
     ffi, mem, ClassId, ContextRef, ForeignTypeRef, MsgType, RJSTimerHandler, RuffCtx, Runtime,
     RuntimeRef, Value, RJSPromise, register_rtu_context_class, qruff_rtu_setup,
+    qruff_rtu_read_holding_registers, qruff_rtu_context_class_id
 };
 
 lazy_static! {
@@ -394,6 +395,7 @@ pub fn register_timer_class(rt: &RuntimeRef) -> bool {
 new_func_table_type!(QRuffModuleFuncList, ModuleFuncList, 7);
 new_func_table_type!(QRuffCmdGeneratorFuncList, CmdGeneratorFuncList, 2);
 new_func_table_type!(QRuffCmdEndpointFuncList, CmdEndpointFuncList, 1);
+new_func_table_type!(QRuffRtuFuncList, RtuFuncList, 1);
 
 lazy_static! {
     static ref QRUFF_MODULE_FUNC_TABLE: QRuffModuleFuncList = QRuffModuleFuncList([
@@ -409,6 +411,10 @@ lazy_static! {
     static ref QRUFF_CMD_ENDPOINT_FUNC_TABLE: QRuffCmdEndpointFuncList = QRuffCmdEndpointFuncList([
         //register_func!(show, qruff_cmd_generator_run, 0),
         register_func!(show, qruff_cmd_show, 0),
+    ]);
+
+    static ref QRUFF_RTU_FUNC_TABLE: QRuffRtuFuncList = QRuffRtuFuncList([
+        register_func!(read_holding_registers, qruff_rtu_read_holding_registers, 0),
     ]);
 
     static ref QRUFF_CMD_GENERATOR_FUNC_TABLE: QRuffCmdGeneratorFuncList = QRuffCmdGeneratorFuncList([
@@ -442,6 +448,14 @@ unsafe extern "C" fn js_module_dummy_init(
     );
 
     ctxt.set_class_proto(*QRUFF_CMD_GENERATOR_CLASS_ID, cmd_obj);
+
+    let rtu_obj = ctxt.new_object();
+
+    ffi::JS_SetPropertyFunctionList(_ctx, rtu_obj.raw(),
+        QRUFF_RTU_FUNC_TABLE.as_ptr() as *mut _,
+        QRUFF_RTU_FUNC_TABLE.0.len() as i32,
+    );
+    ctxt.set_class_proto(qruff_rtu_context_class_id(), rtu_obj);
 
     let cmd_endpoint_obj = ctxt.new_object();
     ffi::JS_SetPropertyFunctionList(_ctx, cmd_endpoint_obj.raw(),

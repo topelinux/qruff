@@ -1,4 +1,4 @@
-use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator, Cmd, qruff_rtu_setup_settle_promise, SerialConfig, rtu_setup, RtuContext};
+use crate::{ffi, Args, ContextRef, Eval, Local, Value, CmdGenerator, Cmd, qruff_rtu_setup_settle_promise, SerialConfig, rtu_setup, RtuContext, RtuOperation, qruff_rtu_operation_settle_promise, rtu_operation};
 use failure::Error;
 use foreign_types::ForeignTypeRef;
 use std::collections::HashMap;
@@ -189,6 +189,7 @@ pub enum MsgType<'a> {
     AddCmdGenerator(u32, Box<CmdGenerator>),
     AddCmdShower(u32, Receiver<Cmd>),
     CreateRtuSetup(u32, SerialConfig, RJSPromise<'a>),
+    AddRtuOperation(u32, RtuOperation, RJSPromise<'a>),
 }
 
 #[derive(Debug)]
@@ -196,6 +197,7 @@ pub enum RespType {
     FsResponse(u32, Result<Vec<u8>, Error>),
     GetAddrInfo(u32, Result<Vec<u8>, Error>),
     RtuSetup(u32, Result<RtuContext, Error>),
+    RtuReadHoldingRegisters(u32, Result<Vec<u16>, Error>),
 }
 
 type RequestMsg<'a> = Rc<Mutex<Vec<MsgType<'a>>>>;
@@ -286,6 +288,11 @@ impl<'a> RRIdManager<'a> {
                     qruff_rtu_setup_settle_promise(promise, context);
                 }
             },
+            Some(RespType::RtuReadHoldingRegisters(job_id, content)) => {
+                if let Some(promise) = self.pending_job.remove(&job_id) {
+                    qruff_rtu_operation_settle_promise(promise, content);
+                }
+            },
             None => {}
         }
     }
@@ -333,6 +340,10 @@ pub fn check_msg_queue<'a>(
             },
             MsgType::CreateRtuSetup(id, config, promise) => {
                 tokio::spawn(rtu_setup(config, resp_tx.clone(), id));
+                resoure_manager.add_promise(id, promise)
+            },
+            MsgType::AddRtuOperation(id, operation, promise) => {
+                tokio::spawn(rtu_operation(operation, resp_tx.clone(), id));
                 resoure_manager.add_promise(id, promise)
             },
             MsgType::AddCmdShower(id, mut rx) => {

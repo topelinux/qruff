@@ -20,7 +20,7 @@ lazy_static = "1.3"
 libc = "0.2"
 log = "0.4"
 platforms = "0.2"
-pretty_env_logger = "0.3"
+pretty_env_logger = "0.4"
 proc-macro-hack = "0.5"
 qjs = { version = "0.1", git = "https://github.com/topelinux/rust-quickjs.git", rev = "2648e7e" }
 structopt = "0.3"

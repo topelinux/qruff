@@ -135,12 +135,11 @@ unsafe extern "C" fn qruff_create_cmd_endpoint(
 }
 
 unsafe extern "C" fn qruff_cmd_generator_endpoint(
-    ctx: *mut ffi::JSContext,
+    _ctx: *mut ffi::JSContext,
     this_val: ffi::JSValue,
     argc: ::std::os::raw::c_int,
     argv: *mut ffi::JSValue,
 ) -> ffi::JSValue {
-    let ctxt = ContextRef::from_ptr(ctx);
     let this = Value::from(this_val);
     let args = slice::from_raw_parts(argv, argc as usize);
     let dest = Value::from(args[0]);
@@ -148,8 +147,8 @@ unsafe extern "C" fn qruff_cmd_generator_endpoint(
     let ptr = this.get_opaque::<CmdGenerator>(*QRUFF_CMD_GENERATOR_CLASS_ID);
 
     match &(*ptr).rx {
-        Some(rx) => {
-            let mut dest_ptr = dest.get_opaque::<CmdEndpoint>(*QRUFF_CMD_ENDPOINT_CLASS_ID);
+        Some(_) => {
+            let dest_ptr = dest.get_opaque::<CmdEndpoint>(*QRUFF_CMD_ENDPOINT_CLASS_ID);
             let rx = (*ptr).rx.take().unwrap();
             (*dest_ptr).rx.replace(rx);
             println!("!!!! set endpoint tx !!!!!");
@@ -326,7 +325,7 @@ unsafe extern "C" fn qruff_getAddrInfo(
     promise
 }
 
-pub fn register_creat_cmd_endpoint_class(rt: &RuntimeRef) -> bool {
+pub fn register_create_cmd_endpoint_class(rt: &RuntimeRef) -> bool {
     unsafe extern "C" fn qruff_cmd_endpoint_finalizer(_rt: *mut ffi::JSRuntime, obj: ffi::JSValue) {
         let ptr = ffi::JS_GetOpaque(obj, *QRUFF_CMD_ENDPOINT_CLASS_ID);
 
@@ -438,6 +437,9 @@ unsafe extern "C" fn js_module_dummy_init(
         println!("Fail to register Cmd CmdGenerator Class");
     }
 
+    if register_create_cmd_endpoint_class(ctxt.runtime()) {
+        println!("Fail to register CMD endpoint class");
+    }
     if register_rtu_context_class(ctxt.runtime()) {
         println!("Fail to register rtu context Class");
     }
